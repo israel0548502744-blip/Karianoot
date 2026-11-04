@@ -1,0 +1,39 @@
+name: Voice quality check
+
+# Synthesizes with several settings and scores each with a Hebrew speech recognizer.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["tools/quality.py", ".github/workflows/quality.yml"]
+
+env:
+  BLUE_V3_REV: b26faaa63255d2991998c7f28c10aa4e6026f3c9
+  BLUE_25_REV: 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e
+  RENIKUD_REV: 679c56ca449d41873fb8ff7711ddf7563d28198f
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache models
+        uses: actions/cache/restore@v4
+        with:
+          path: models
+          key: models-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}
+      - run: pip install -q onnxruntime soundfile faster-whisper huggingface_hub "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
+      - name: Download models if not cached
+        run: |
+          [ -d models/blue_v3 ] || hf download notmax123/BlueV3-onnx --revision $BLUE_V3_REV --local-dir models/blue_v3 --exclude "*.md" --exclude ".gitattributes"
+          [ -d models/blue_25 ] || hf download notmax123/BlueTTS2.5-onnx --revision $BLUE_25_REV --local-dir models/blue_25 --exclude "*.md" --exclude ".gitattributes"
+          [ -f models/renikud/model_int8.onnx ] || hf download notmax123/RenikudPlus model_int8.onnx --revision $RENIKUD_REV --local-dir models/renikud
+      - run: python tools/quality.py models quality-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quality-wavs
+          path: quality-out
