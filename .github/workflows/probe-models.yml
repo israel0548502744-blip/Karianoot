@@ -1,0 +1,55 @@
+name: Probe model repositories
+
+# Lists the files, sizes and licenses of the Hugging Face repositories the app can use,
+# so the model catalog is written from real data (this sandbox cannot reach Hugging Face).
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/probe-models.yml"]
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q huggingface_hub
+      - name: List repositories
+        run: |
+          python - <<'PY' | tee probe.txt
+          from huggingface_hub import HfApi
+          api = HfApi()
+          repos = [
+              "notmax123/BlueTTS2.5-onnx", "notmax123/blue-onnx-v2", "notmax123/BlueV3-onnx",
+              "notmax123/RenikudPlus", "renikud/renikud",
+              "thewh1teagle/phonikud-onnx", "thewh1teagle/piper-onnx-noa",
+              "ResembleAI/chatterbox", "k2-fsa/OmniVoice",
+          ]
+          for r in repos:
+              try:
+                  info = api.model_info(r, files_metadata=True)
+              except Exception as e:
+                  print(f"## {r}: ERROR {e}\n"); continue
+              lic = (info.card_data or {}).get("license") if info.card_data else None
+              print(f"## {r}  license={lic}  sha={info.sha}")
+              for s in info.siblings:
+                  print(f"  {s.size or 0:>12}  {s.rfilename}")
+              print()
+          PY
+      - name: Search for Hebrew Piper and Orpheus repos
+        run: |
+          python - <<'PY' | tee -a probe.txt
+          from huggingface_hub import HfApi
+          api = HfApi()
+          for q in ["noa piper", "phonikud", "hebrew orpheus", "hebrew tts", "renikud"]:
+              print(f"## search: {q}")
+              for m in api.list_models(search=q, limit=40):
+                  print("  ", m.id)
+              print()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe
+          path: probe.txt
