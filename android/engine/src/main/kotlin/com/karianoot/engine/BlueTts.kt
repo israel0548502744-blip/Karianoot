@@ -86,6 +86,8 @@ class BlueTts(
     private val latentMean: FloatArray?
     private val latentStd: FloatArray?
     private val normScale: Float
+    /** Blue V3 bakes classifier-free guidance into vector_estimator; applying it again ruins the audio. */
+    val cfgInGraph: Boolean = cfg.optString("tts_version").startsWith("v3")
 
     init {
         val dpFile = File(dir, "duration_predictor_style.onnx").takeIf { it.exists() } ?: File(dir, "duration_predictor.onnx")
@@ -171,7 +173,7 @@ class BlueTts(
             val latentMask = f(mask, 1, 1, latentLen)
             val totalStep = f(floatArrayOf(opt.steps.toFloat()), 1)
 
-            val useCfg = opt.cfgScale != 1f && uText != null && uRef != null
+            val useCfg = !cfgInGraph && opt.cfgScale != 1f && uText != null && uRef != null
             val uTextT = if (!vfHasCfg && useCfg) f(uText!!.data, *uText.shape) else null
             val uRefT = if (!vfHasCfg && useCfg) f(uRef!!.data, *uRef.shape) else null
             val uMask = if (!vfHasCfg && useCfg) f(floatArrayOf(1f), 1, 1, 1) else null

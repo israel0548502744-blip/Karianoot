@@ -39,8 +39,8 @@ object Catalog {
 
     val blueV3 = ModelInfo(
         id = "blue_v3", kind = ModelKind.BLUE,
-        title = "Blue V3",
-        subtitle = "הקולות העבריים הכי טובים שיש היום בטלפון: רועי ורותם. איכות 44.1kHz.",
+        title = "Blue V3 (ניסיוני)",
+        subtitle = "הקולות רועי ורותם. בבדיקה עדיין פחות ברורים מ-Blue 2.5.",
         repo = "notmax123/BlueV3-onnx", revision = "b26faaa63255d2991998c7f28c10aa4e6026f3c9",
         license = "MIT", credit = "BlueTTS — Maxim Melichov (notmax123)",
         files = listOf(
@@ -54,7 +54,7 @@ object Catalog {
     val blue25 = ModelInfo(
         id = "blue_25", kind = ModelKind.BLUE,
         title = "Blue 2.5",
-        subtitle = "דור קודם, קל ומהיר יותר. חמישה קולות נוספים.",
+        subtitle = "חמישה קולות ברורים מאוד (בבדיקה: 99% מהמילים נשמעו נכון). מומלץ.",
         repo = "notmax123/BlueTTS2.5-onnx", revision = "95feb5d0cbfc8e5a95bffb067d03537cbf35be3e",
         license = "MIT", credit = "BlueTTS — Maxim Melichov (notmax123); LibriTTS voices CC BY 4.0",
         files = listOf(
@@ -77,17 +77,17 @@ object Catalog {
         ModelInfo("orpheus", "Orpheus עברית", "מודל גדול (3B), ניסיוני, ירוץ על ה-NPU.", ModelKind.SOON, license = "לבדיקה", credit = "Canopy Labs"),
     )
 
-    val downloadable = listOf(g2p, blueV3, blue25)
+    val downloadable = listOf(g2p, blue25, blueV3)
     val all = downloadable + soon
 
     val voices = listOf(
-        VoiceInfo("v3_roi", "blue_v3", "voices/Roi.json", "רועי", "גברי · V3", female = false),
-        VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "נשי · V3", female = true),
         VoiceInfo("25_female", "blue_25", "voices/female.json", "נשי", "2.5", female = true),
         VoiceInfo("25_m6209", "blue_25", "voices/libri_male_6209.json", "גברי 1", "2.5", female = false),
         VoiceInfo("25_m8088", "blue_25", "voices/libri_male_8088.json", "גברי 2", "2.5", female = false),
         VoiceInfo("25_f1088", "blue_25", "voices/libri_female_1088.json", "נשי 2", "2.5", female = true),
         VoiceInfo("25_f6147", "blue_25", "voices/libri_female_6147.json", "נשי 3", "2.5", female = true),
+        VoiceInfo("v3_roi", "blue_v3", "voices/Roi.json", "רועי", "ניסיוני", female = false),
+        VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "ניסיוני", female = true),
     )
 
     fun model(id: String) = all.first { it.id == id }

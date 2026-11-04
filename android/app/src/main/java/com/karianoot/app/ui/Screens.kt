@@ -186,7 +186,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.AutoAwesome, null, tint = C.Gold, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("כדי להתחיל, מורידים פעם אחת את מנוע ההגייה וקול אחד (בערך 700MB).", color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Text("כדי להתחיל, מורידים פעם אחת את מנוע ההגייה ואת Blue 2.5 (בערך 580MB).", color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 }
                 GoldButton("להורדת המודלים", Modifier.fillMaxWidth(), icon = Icons.Rounded.Download, onClick = openModels)
             }

@@ -80,7 +80,8 @@ for bundle, voices in [("blue_v3", ["Roi", "Rotem"]), ("blue_25", ["female"])]:
             np.random.randn = noise
             try:
                 ids, mask = tts.text_processor([ipa], ["he"])
-                wav, dur = tts._infer([ipa], ["he"], style, total_step=5, speed=1.0, cfg_scale=4.0)
+                # Blue V3 has guidance inside the graph (model card): no external CFG.
+                wav, dur = tts._infer([ipa], ["he"], style, total_step=5, speed=1.0, cfg_scale=1.0 if bundle == "blue_v3" else 4.0)
             finally:
                 np.random.randn = orig
             tag = f"{bundle}_{v}_{i}"
