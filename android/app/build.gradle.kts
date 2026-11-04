@@ -41,13 +41,8 @@ android {
 
     buildFeatures { compose = true; buildConfig = true }
 
-    packaging {
-        jniLibs {
-            // QNN libraries must be on disk so the Hexagon (NPU) skeleton libraries can be found.
-            useLegacyPackaging = true
-            excludes += listOf("**/libQnnHtpV66*", "**/libQnnHtpV68*", "**/libQnnHtpV69*", "**/libQnnDsp*")
-        }
-    }
+    // Native libraries stay inside the APK (not unpacked at install), which keeps installs small.
+    packaging { jniLibs { useLegacyPackaging = false } }
 
     testOptions {
         unitTests {
@@ -65,9 +60,9 @@ android {
 
 dependencies {
     implementation(project(":engine"))
-    // ONNX Runtime with the Qualcomm QNN execution provider (NPU).
-    implementation("com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0")
-    implementation("com.qualcomm.qti:qnn-runtime:2.51.0")
+    // ONNX Runtime (CPU). The NPU build (onnxruntime-android-qnn + qnn-runtime, ~235 MB of libraries)
+    // comes back when a model is actually compiled for the NPU.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
