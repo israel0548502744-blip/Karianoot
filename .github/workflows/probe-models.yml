@@ -49,6 +49,18 @@ jobs:
                   print("  ", m.id)
               print()
           PY
+      - name: Print model cards
+        run: |
+          python - <<'PY' | tee -a probe.txt
+          from huggingface_hub import hf_hub_download
+          for repo, f in [("notmax123/BlueV3-onnx", "README.md"), ("notmax123/BlueV3", "README.md"),
+                          ("notmax123/BlueTTS2.5-onnx", "README.md"), ("notmax123/BlueTTS2.5-onnx", "manifest.json"),
+                          ("notmax123/BlueV3-onnx", "tts.json")]:
+              try:
+                  print(f"===== {repo}/{f}\n" + open(hf_hub_download(repo, f)).read())
+              except Exception as e:
+                  print(f"===== {repo}/{f}: {e}")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: probe
