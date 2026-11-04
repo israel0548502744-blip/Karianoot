@@ -25,7 +25,7 @@ jobs:
         with:
           path: models
           key: models-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}
-      - run: pip install -q onnxruntime soundfile faster-whisper huggingface_hub "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
+      - run: pip install -q onnxruntime soundfile scipy faster-whisper huggingface_hub "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
       - name: Download models if not cached
         run: |
           [ -d models/blue_v3 ] || hf download notmax123/BlueV3-onnx --revision $BLUE_V3_REV --local-dir models/blue_v3 --exclude "*.md" --exclude ".gitattributes"

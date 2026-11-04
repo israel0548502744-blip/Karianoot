@@ -5,6 +5,7 @@ Usage: python tools/quality.py <models_dir> <out_dir>
 """
 import os, sys, json, unicodedata
 import numpy as np, soundfile as sf
+from scipy.signal import resample_poly
 from blue_onnx import load_text_to_speech, load_voice_style, limit_peak
 from renikud_onnx import G2P
 from faster_whisper import WhisperModel
@@ -58,7 +59,8 @@ for name, bundle, voice, steps, cfg in VARIANTS:
         wav = limit_peak(wav[0])
         path = os.path.join(out, f"{name.split(' ')[0]}_{i}.wav")
         sf.write(path, wav, tts.sample_rate)
-        segs, _ = asr.transcribe(path, language="he", beam_size=5)
+        audio16 = resample_poly(wav, 160, 441).astype(np.float32)  # 44.1 kHz -> 16 kHz
+        segs, _ = asr.transcribe(audio16, language="he", beam_size=5)
         hyp = " ".join(x.text for x in segs)
         errs.append(cer(s, hyp))
         print(f"{name} [{i}] cer={errs[-1]:.3f} | {hyp}")
