@@ -1,0 +1,101 @@
+package com.karianoot.engine
+
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Test
+import java.io.File
+import kotlin.math.abs
+import kotlin.math.sqrt
+
+/**
+ * Compares the Kotlin engine with the original Python packages (golden data from
+ * tools/reference.py). Skipped when KARIANOOT_MODELS / KARIANOOT_GOLDEN are not set.
+ */
+class GoldenTest {
+    private val models = System.getenv("KARIANOOT_MODELS")?.takeIf { it.isNotEmpty() }?.let(::File)
+    private val golden = System.getenv("KARIANOOT_GOLDEN")?.takeIf { it.isNotEmpty() }?.let(::File)
+    private val out = File("build/test-out").apply { mkdirs() }
+
+    private fun need() = assumeTrue("no models/golden data", models != null && golden != null)
+
+    @Test fun g2pMatchesPython() {
+        need()
+        val g2p = HebrewG2P(File(models, "renikud/model_int8.onnx").path)
+        val cases = JSONArray(File(golden, "g2p.json").readText())
+        var bad = 0
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONObject(i)
+            val t0 = System.nanoTime()
+            val got = g2p.phonemize(c.getString("text"))
+            val ms = (System.nanoTime() - t0) / 1e6
+            val ok = got == c.getString("ipa")
+            if (!ok) bad++
+            println("CHECK g2p ${if (ok) "PASS" else "FAIL"} (${"%.0f".format(ms)} ms) ${c.getString("text")}\n   python: ${c.getString("ipa")}\n   kotlin: $got")
+        }
+        assertEquals("G2P mismatches", 0, bad)
+    }
+
+    @Test fun blueMatchesPython() {
+        need()
+        val tags = golden!!.listFiles()!!.map { it.name }.filter { it.startsWith("blue_") && it.endsWith(".json") }.sorted()
+        assertTrue("no Blue golden files", tags.isNotEmpty())
+        val engines = HashMap<String, BlueTts>()
+        var worst = 0.0
+        for (name in tags) {
+            val tag = name.removeSuffix(".json")
+            val parts = tag.split("_")               // blue, v3, Roi, 0
+            val bundle = parts[0] + "_" + parts[1]
+            val voiceName = parts.subList(2, parts.size - 1).joinToString("_")
+            val tts = engines.getOrPut(bundle) { BlueTts(File(models, bundle), null) }
+            val voice = BlueVoice.load(File(models, "$bundle/voices/$voiceName.json"))
+            val ref = JSONObject(File(golden, name).readText())
+            val ipa = ref.getString("ipa")
+
+            val ids = tts.encode(tts.preprocess(ipa)).toList()
+            val refIds = ref.getJSONArray("ids").let { a -> (0 until a.length()).map { a.getLong(it) } }
+            assertEquals("token ids for $tag", refIds, ids)
+
+            val noise = Npy.read(File(golden, "${tag}_noise.npy"))
+            val t0 = System.nanoTime()
+            val (wav, dur) = tts.infer(ipa, voice, BlueTts.Options(), BlueTts.Noise { noise.data.copyOf() })
+            val sec = (System.nanoTime() - t0) / 1e9
+            val refWav = Npy.read(File(golden, "${tag}_wav.npy")).data
+            Wav.write(File(out, "$tag.wav"), Wav.limitPeak(wav), tts.sampleRate)
+
+            val n = minOf(wav.size, refWav.size)
+            var dot = 0.0; var a2 = 0.0; var b2 = 0.0; var maxDiff = 0.0
+            for (i in 0 until n) {
+                dot += wav[i] * refWav[i]; a2 += wav[i] * wav[i]; b2 += refWav[i] * refWav[i]
+                maxDiff = maxOf(maxDiff, abs(wav[i] - refWav[i]).toDouble())
+            }
+            val corr = dot / sqrt(a2 * b2 + 1e-12)
+            worst = maxOf(worst, maxDiff)
+            val audioSec = wav.size.toDouble() / tts.sampleRate
+            println("CHECK blue $tag dur py=${"%.3f".format(ref.getDouble("dur"))} kt=${"%.3f".format(dur)} " +
+                "len py=${refWav.size} kt=${wav.size} corr=${"%.5f".format(corr)} maxdiff=${"%.4f".format(maxDiff)} " +
+                "time=${"%.1f".format(sec)}s audio=${"%.1f".format(audioSec)}s")
+            assertEquals("length for $tag", refWav.size, wav.size)
+            assertTrue("audio for $tag differs (corr=$corr)", corr > 0.999)
+        }
+        engines.values.forEach { it.close() }
+        println("CHECK blue worst maxdiff=$worst")
+    }
+
+    @Test fun fullPipelineWritesWav() {
+        need()
+        val g2p = HebrewG2P(File(models, "renikud/model_int8.onnx").path)
+        BlueTts(File(models, "blue_v3"), g2p).use { tts ->
+            val voice = BlueVoice.load(File(models, "blue_v3/voices/Roi.json"))
+            val text = "ערב טוב לכולם. היום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק על מה לשים את הכסף."
+            val t0 = System.nanoTime()
+            val wav = tts.synthesize(text, voice, BlueTts.Options(silence = 0.15f))
+            val sec = (System.nanoTime() - t0) / 1e9
+            Wav.write(File(out, "full_v3_roi.wav"), wav, tts.sampleRate)
+            println("CHECK full ${"%.1f".format(wav.size.toDouble() / tts.sampleRate)}s audio in ${"%.1f".format(sec)}s")
+            assertTrue(wav.size > tts.sampleRate)
+        }
+    }
+}

@@ -28,15 +28,15 @@ jobs:
           key: models-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}
       - name: Download models
         run: |
-          pip install -q "huggingface_hub[cli]"
-          [ -d models/blue_v3 ] || hf download notmax123/BlueV3-onnx --revision $BLUE_V3_REV --local-dir models/blue_v3 --exclude "*.md" ".gitattributes"
-          [ -d models/blue_25 ] || hf download notmax123/BlueTTS2.5-onnx --revision $BLUE_25_REV --local-dir models/blue_25 --exclude "*.md" ".gitattributes"
+          pip install -q huggingface_hub
+          [ -d models/blue_v3 ] || hf download notmax123/BlueV3-onnx --revision $BLUE_V3_REV --local-dir models/blue_v3 --exclude "*.md" --exclude ".gitattributes"
+          [ -d models/blue_25 ] || hf download notmax123/BlueTTS2.5-onnx --revision $BLUE_25_REV --local-dir models/blue_25 --exclude "*.md" --exclude ".gitattributes"
           [ -f models/renikud/model_int8.onnx ] || hf download notmax123/RenikudPlus model_int8.onnx --revision $RENIKUD_REV --local-dir models/renikud
           rm -rf models/*/.cache
           du -sh models/*
       - name: Install the original packages
         run: |
-          pip install -q onnxruntime soundfile "renikud-plus[cpu]" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
+          pip install -q onnxruntime soundfile "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
           pip show blue-onnx renikud-plus | grep -E "Name|Version"
       - name: Build golden data
         run: python tools/reference.py models golden
