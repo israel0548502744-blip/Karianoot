@@ -1,0 +1,3 @@
+-keep class ai.onnxruntime.** { *; }
+-keep class com.karianoot.engine.** { *; }
+-dontwarn org.json.**
