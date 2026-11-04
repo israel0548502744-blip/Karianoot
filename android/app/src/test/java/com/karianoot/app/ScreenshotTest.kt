@@ -35,11 +35,11 @@ class ScreenshotTest {
     }
 
     private fun shot(name: String, tab: Tab, text: String? = null) {
-        val models = Models(ctx)
-        val speech = Speech(ctx, models)
+        val app = ApplicationProvider.getApplicationContext<KarianootApp>()
+        app.models.refresh()
         captureRoboImage("build/screenshots/$name.png") {
             CompositionLocalProvider(LocalInspectionMode provides true) {
-                App(models, speech, text, startTab = tab, motion = false)
+                App(app, text, startTab = tab, motion = false)
             }
         }
     }

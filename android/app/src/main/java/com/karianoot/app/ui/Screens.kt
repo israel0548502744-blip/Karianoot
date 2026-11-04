@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.karianoot.app.Catalog
 import com.karianoot.app.Creation
+import com.karianoot.app.KarianootApp
 import com.karianoot.app.ModelInfo
 import com.karianoot.app.ModelKind
 import com.karianoot.app.ModelState
@@ -101,7 +102,9 @@ enum class Tab(val title: String, val icon: ImageVector) {
 }
 
 @Composable
-fun App(models: Models, speech: Speech, sharedText: String?, startTab: Tab = Tab.Studio, motion: Boolean = true) {
+fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, motion: Boolean = true) {
+    val models = app.models
+    val speech = app.speech
     var tab by remember { mutableStateOf(startTab) }
     val history = remember { mutableStateListOf<Creation>().apply { addAll(speech.history()) } }
     LaunchedEffect(Unit) { if (motion) models.watch() }
@@ -111,7 +114,7 @@ fun App(models: Models, speech: Speech, sharedText: String?, startTab: Tab = Tab
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                 Box(Modifier.weight(1f)) {
                     when (tab) {
-                        Tab.Studio -> StudioScreen(models, speech, sharedText, history) { tab = Tab.Models }
+                        Tab.Studio -> StudioScreen(app, sharedText, history) { tab = Tab.Models }
                         Tab.Library -> LibraryScreen(speech, history)
                         Tab.Models -> ModelsScreen(models)
                         Tab.About -> AboutScreen()
@@ -148,10 +151,12 @@ private const val SAMPLE = "ערב טוב לכולם! היום יש לנו של�
     "תישארו עד הסוף, ואל תשכחו להצטרף לקבוצה."
 
 @Composable
-fun StudioScreen(models: Models, speech: Speech, sharedText: String?, history: MutableList<Creation>, openModels: () -> Unit) {
+fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Creation>, openModels: () -> Unit) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val models = app.models
+    val speech = app.speech
     val states by models.states.collectAsState()
+    val job by app.job.collectAsState()
     var text by remember { mutableStateOf(sharedText ?: "") }
     val ready = Catalog.voices.filter { states[it.modelId] == ModelState.Ready }
     var voiceId by remember { mutableStateOf(Catalog.voices.first().id) }
@@ -159,12 +164,16 @@ fun StudioScreen(models: Models, speech: Speech, sharedText: String?, history: M
     var speed by remember { mutableFloatStateOf(1.0f) }
     var quality by remember { mutableStateOf(1) } // 0 fast, 1 good, 2 best
     var pause by remember { mutableFloatStateOf(0.15f) }
-    var busy by remember { mutableStateOf(false) }
-    var stage by remember { mutableStateOf("") }
-    var progress by remember { mutableFloatStateOf(0f) }
-    var last by remember { mutableStateOf<Creation?>(null) }
+    val busy = job.busy
+    val last = job.result
     val g2pReady = states["g2p"] == ModelState.Ready
-
+    // A finished job (also one that finished while the app was in the background) joins the list.
+    LaunchedEffect(job.result) {
+        val c = job.result ?: return@LaunchedEffect
+        if (history.none { it.file == c.file }) history.add(0, c)
+        while (history.size > Speech.KEEP) history.removeAt(history.size - 1)
+    }
+    LaunchedEffect(job.error) { job.error?.let { Toast.makeText(ctx, "שגיאה: $it", Toast.LENGTH_LONG).show() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(10.dp))
         Column(Modifier.enter(0)) {
@@ -217,29 +226,21 @@ fun StudioScreen(models: Models, speech: Speech, sharedText: String?, history: M
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Wave(Modifier.size(42.dp, 28.dp), animate = true)
                     Spacer(Modifier.width(12.dp))
-                    Text(stage, color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                    Text("${(progress * 100).toInt()}%", color = C.Gold, fontWeight = FontWeight.Bold)
+                    Text(job.stage, color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Text("${(job.progress * 100).toInt()}%", color = C.Gold, fontWeight = FontWeight.Bold)
                 }
-                GoldProgress(progress)
+                GoldProgress(job.progress)
+                Text("אפשר לצאת מהאפליקציה. תקבלו התראה כשהקריינות מוכנה.", color = C.Faint, fontSize = 12.sp)
             }
         }
 
         GoldButton(if (busy) "מקריא…" else "צור קריינות", Modifier.fillMaxWidth().enter(5), icon = Icons.Rounded.AutoAwesome,
             enabled = !busy && g2pReady && voice != null && text.isNotBlank()) {
             val v = voice ?: return@GoldButton
-            busy = true; progress = 0f
-            scope.launch {
-                runCatching {
-                    speech.speak(text, v, BlueTts.Options(steps = intArrayOf(5, 10, 16)[quality], speed = speed, silence = pause)) { s, p ->
-                        stage = s; progress = p
-                    }
-                }.onSuccess { c -> last = c; history.add(0, c) }
-                    .onFailure { e -> Toast.makeText(ctx, "שגיאה: ${e.message}", Toast.LENGTH_LONG).show() }
-                busy = false
-            }
+            app.narrate(text, v, BlueTts.Options(steps = intArrayOf(5, 10, 16)[quality], speed = speed, silence = pause))
         }
 
-        last?.let { CreationCard(it, speech, highlight = true) { history.remove(it); speech.delete(it); last = null } }
+        last?.let { CreationCard(it, speech, highlight = true) { history.remove(it); speech.delete(it); app.clearResult() } }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -349,6 +350,7 @@ fun LibraryScreen(speech: Speech, history: MutableList<Creation>) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Spacer(Modifier.height(10.dp))
         GoldText("ההקלטות שלי", 30.sp)
+        Text("נשמרות 30 ההקלטות האחרונות.", color = C.Faint, fontSize = 13.sp)
         if (history.isEmpty()) Text("עוד אין הקלטות. כל קריינות שתיצרו תופיע כאן.", color = C.Sub, fontSize = 15.sp)
         history.toList().forEachIndexed { i, c -> Box(Modifier.enter(i.coerceAtMost(8))) { CreationCard(c, speech) { history.remove(c); speech.delete(c) } } }
         Spacer(Modifier.height(20.dp))

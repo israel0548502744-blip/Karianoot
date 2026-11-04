@@ -69,7 +69,10 @@ class Speech(private val ctx: Context, private val models: Models) {
 
     fun delete(c: Creation) { c.file.delete(); save(history().filter { it.file != c.file }) }
 
-    private fun save(list: List<Creation>) {
+    private fun save(all: List<Creation>) {
+        // Keep the newest [KEEP] recordings; older ones are deleted from the phone.
+        val list = all.take(KEEP)
+        all.drop(KEEP).forEach { it.file.delete() }
         val a = JSONArray()
         for (c in list) a.put(JSONObject().put("file", c.file.name).put("text", c.text).put("voice", c.voice)
             .put("seconds", c.seconds.toDouble()).put("at", c.createdAt).put("gen", c.genSeconds.toDouble()))
@@ -87,6 +90,8 @@ class Speech(private val ctx: Context, private val models: Models) {
         ctx.contentResolver.openOutputStream(uri)?.use { out -> c.file.inputStream().use { it.copyTo(out) } }
         true
     }.getOrDefault(false)
+
+    companion object { const val KEEP = 30 }
 
     fun release() { tts?.close(); g2p?.close(); tts = null; g2p = null; ttsModel = null }
 }
