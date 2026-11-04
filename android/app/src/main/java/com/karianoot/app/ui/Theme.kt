@@ -38,6 +38,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -97,8 +98,20 @@ private fun rubik(weight: Int) = Font(R.font.rubik, FontWeight(weight),
 
 val Rubik = FontFamily(rubik(400), rubik(500), rubik(600), rubik(700), rubik(800))
 
+/** Screenshot tests turn motion off so every frame is the same. */
+val LocalMotion = staticCompositionLocalOf { true }
+
+/** An endless 0→1 (or from→to) loop, or a fixed [still] value when motion is off. */
 @Composable
-fun KarianootTheme(content: @Composable () -> Unit) {
+fun loop(millis: Int, from: Float = 0f, to: Float = 1f, delay: Int = 0, still: Float = from + (to - from) * 0.35f): Float {
+    if (!LocalMotion.current) return still
+    val v by rememberInfiniteTransition(label = "loop").animateFloat(from, to,
+        infiniteRepeatable(tween(millis, delayMillis = delay, easing = LinearEasing)), label = "v")
+    return v
+}
+
+@Composable
+fun KarianootTheme(motion: Boolean = true, content: @Composable () -> Unit) {
     val base = TextStyle(fontFamily = Rubik, color = C.Text)
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -116,7 +129,7 @@ fun KarianootTheme(content: @Composable () -> Unit) {
             )
         },
     ) {
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, content = content)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalMotion provides motion, content = content)
     }
 }
 
@@ -129,8 +142,7 @@ fun NightBackground(modifier: Modifier = Modifier) {
         val rnd = Random(7)
         List(46) { Glint(rnd.nextFloat(), rnd.nextFloat(), 0.6f + rnd.nextFloat() * 1.8f, rnd.nextFloat() * 6.28f, 0.5f + rnd.nextFloat(), rnd.nextFloat() < 0.18f) }
     }
-    val t by rememberInfiniteTransition(label = "night").animateFloat(0f, 1f,
-        infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "t")
+    val t = loop(9000)
     Canvas(modifier.fillMaxSize()) {
         drawRect(Brush.verticalGradient(listOf(C.BgTop, C.Bg, C.Bg)))
         val w = size.width; val h = size.height
@@ -164,6 +176,7 @@ fun Modifier.glass(shape: Shape = RoundedCornerShape(24.dp), strong: Boolean = f
 
 @Composable
 fun Modifier.enter(index: Int = 0): Modifier {
+    if (!LocalMotion.current) return this
     val p = remember { Animatable(0f) }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(55L * index); p.animateTo(1f, tween(460, easing = FastOutSlowInEasing)) }
     return this.graphicsLayer { alpha = p.value; translationY = (1f - p.value) * 24.dp.toPx() }
@@ -193,9 +206,8 @@ fun Section(modifier: Modifier = Modifier, title: String? = null, content: @Comp
 /** The main action: liquid gold with a light sweep and twinkles on both sides. */
 @Composable
 fun GoldButton(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, enabled: Boolean = true, onClick: () -> Unit) {
-    val inf = rememberInfiniteTransition(label = "sweep")
-    val sweep by inf.animateFloat(-0.4f, 1.4f, infiniteRepeatable(tween(2600, delayMillis = 700, easing = LinearEasing)), label = "x")
-    val tw by inf.animateFloat(0f, 1f, infiniteRepeatable(tween(1800, easing = LinearEasing)), label = "tw")
+    val sweep = loop(2600, -0.4f, 1.4f, delay = 700, still = 0.3f)
+    val tw = loop(1800, still = 0.25f)
     Box(
         modifier.height(60.dp)
             .shadow(if (enabled) 22.dp else 0.dp, CircleShape, ambientColor = C.Gold, spotColor = C.Gold)

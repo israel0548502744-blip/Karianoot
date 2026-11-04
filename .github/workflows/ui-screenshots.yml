@@ -1,0 +1,49 @@
+name: UI screenshots
+
+# Renders every screen on the JVM (Robolectric + Roborazzi) and publishes the PNGs to the
+# "ui-screenshots" branch, so the design can be reviewed without a phone.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**", "!ui-screenshots"]
+    paths: ["android/**", ".github/workflows/ui-screenshots.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Render screens
+        run: gradle -p android :app:testDebugUnitTest --tests '*ScreenshotTest*' --no-daemon
+
+      - name: Show test failures
+        if: failure()
+        run: |
+          for f in $(find android/app/build/test-results -name '*.xml'); do
+            grep -A30 '<failure' "$f" | head -80
+          done
+
+      - name: Publish to the ui-screenshots branch
+        if: always()
+        run: |
+          ls android/app/build/screenshots/ || exit 0
+          mkdir out && cp android/app/build/screenshots/*.png out/
+          cd out
+          git init -q -b ui-screenshots
+          git add .
+          git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -qm "Screenshots for ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}" ui-screenshots

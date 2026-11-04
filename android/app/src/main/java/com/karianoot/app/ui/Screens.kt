@@ -101,11 +101,11 @@ enum class Tab(val title: String, val icon: ImageVector) {
 }
 
 @Composable
-fun App(models: Models, speech: Speech, sharedText: String?) {
-    var tab by remember { mutableStateOf(Tab.Studio) }
+fun App(models: Models, speech: Speech, sharedText: String?, startTab: Tab = Tab.Studio, motion: Boolean = true) {
+    var tab by remember { mutableStateOf(startTab) }
     val history = remember { mutableStateListOf<Creation>().apply { addAll(speech.history()) } }
-    LaunchedEffect(Unit) { models.watch() }
-    KarianootTheme {
+    LaunchedEffect(Unit) { if (motion) models.watch() }
+    KarianootTheme(motion) {
         Box(Modifier.fillMaxSize().background(C.Bg)) {
             NightBackground()
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -287,7 +287,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 /** Gold bars that breathe while something is playing or being made. */
 @Composable
 fun Wave(modifier: Modifier, animate: Boolean, bars: Int = 5) {
-    val t by rememberInfiniteTransition(label = "wave").animateFloat(0f, 6.283f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "t")
+    val t = loop(1100, 0f, 6.283f, still = 1.2f)
     Canvas(modifier) {
         val w = size.width / (bars * 2 - 1)
         for (i in 0 until bars) {
