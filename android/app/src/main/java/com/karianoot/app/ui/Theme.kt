@@ -265,11 +265,12 @@ fun GoldProgress(value: Float, modifier: Modifier = Modifier) {
     }
 }
 
-fun formatSize(bytes: Long): String = when {
+/** "312 MB" — the LRM marks keep the number before the unit inside Hebrew text. */
+fun formatSize(bytes: Long): String = "\u200E" + when {
     bytes >= 1_000_000_000 -> "%.1f GB".format(bytes / 1e9)
     bytes >= 1_000_000 -> "%.0f MB".format(bytes / 1e6)
     else -> "%.0f KB".format(bytes / 1e3)
-}
+} + "\u200E"
 
 fun formatSeconds(s: Float): String {
     val t = s.toInt()
