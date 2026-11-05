@@ -7,6 +7,18 @@ import os, sys, json, unicodedata
 import numpy as np, soundfile as sf
 from scipy.signal import resample_poly
 from blue_onnx import load_text_to_speech, load_voice_style, limit_peak
+
+def fix_v3(tts):
+    """Blue V3: de-normalize with stats.npz before the 144-channel vocoder (model card).
+    blue_onnx skips this when the vocoder is not 24-channel, which ruins V3."""
+    import numpy as _np
+    if tts._latent_mean is None or tts._vocoder_in_channels == tts.ldim:
+        return tts
+    def prep(xt):
+        return ((xt / tts._normalizer_scale) * tts._latent_std + tts._latent_mean).astype(_np.float32)
+    tts._prepare_vocoder_latent = prep
+    return tts
+
 from renikud_onnx import G2P
 from faster_whisper import WhisperModel
 
@@ -36,20 +48,17 @@ def cer(ref, hyp):
     return d[len(h)] / max(1, len(r))
 
 VARIANTS = [
-    ("v3_Roi_cfg4_steps5 (app now)", "blue_v3", "Roi", 5, 4.0),
-    ("v3_Roi_nocfg_steps8", "blue_v3", "Roi", 8, 1.0),
-    ("v3_Roi_nocfg_steps16", "blue_v3", "Roi", 16, 1.0),
-    ("v3_Rotem_cfg4_steps5 (app now)", "blue_v3", "Rotem", 5, 4.0),
-    ("v3_Rotem_nocfg_steps8", "blue_v3", "Rotem", 8, 1.0),
-    ("25_female_cfg4_steps5 (user: great)", "blue_25", "female", 5, 4.0),
-    ("25_female_cfg4_steps10", "blue_25", "female", 10, 4.0),
-    ("25_male6209_cfg4_steps10", "blue_25", "libri_male_6209", 10, 4.0),
+    ("v3_Roi_steps8", "blue_v3", "Roi", 8, 1.0),
+    ("v3_Roi_steps16", "blue_v3", "Roi", 16, 1.0),
+    ("v3_Rotem_steps8", "blue_v3", "Rotem", 8, 1.0),
+    ("v3_Rotem_steps16", "blue_v3", "Rotem", 16, 1.0),
+    ("25_female_steps10", "blue_25", "female", 10, 4.0),
 ]
 engines = {}
 summary = []
 for name, bundle, voice, steps, cfg in VARIANTS:
     if bundle not in engines:
-        engines[bundle] = load_text_to_speech(os.path.join(models, bundle))
+        engines[bundle] = fix_v3(load_text_to_speech(os.path.join(models, bundle)))
     tts = engines[bundle]
     style = load_voice_style([os.path.join(models, bundle, "voices", voice + ".json")])
     errs = []

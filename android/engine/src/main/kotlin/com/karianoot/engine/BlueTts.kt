@@ -211,20 +211,27 @@ class BlueTts(
         }
     }
 
-    /** The vocoder either takes the flow output as-is, or de-normalized and decompressed (`_prepare_vocoder_latent`). */
+    /**
+     * What the vocoder takes. Where stats.npz ships, the latent is de-normalized first:
+     * z = x / scale * std + mean (per channel). Blue 2.5's vocoder then wants it unfolded to
+     * [1, 24, 6T]; Blue V3's takes the de-normalized [1, 144, T] as is (model card). The original
+     * blue_onnx skips the de-normalization for V3, which turns its speech into a creak.
+     */
     private fun vocoderLatent(xt: FloatArray, channels: Int, t: Int): NpArray {
-        if (vocoderChannels != ldim) return NpArray(intArrayOf(1, channels, t), xt)
-        val mean = latentMean ?: error("vocoder needs stats.npz")
+        val mean = latentMean ?: return NpArray(intArrayOf(1, channels, t), xt)
         val std = latentStd!!
-        val out = FloatArray(xt.size)
-        // z[ch][t] = xt/scale*std[ch]+mean[ch]; ch = l*compress + f -> out[l][t*compress + f]
-        for (l in 0 until ldim) for (fi in 0 until compress) {
-            val ch = l * compress + fi
+        val z = FloatArray(xt.size)
+        for (ch in 0 until channels) {
             val m = if (mean.size == 1) mean[0] else mean[ch]
             val s = if (std.size == 1) std[0] else std[ch]
-            for (ti in 0 until t) {
-                out[l * (t * compress) + ti * compress + fi] = (xt[ch * t + ti] / normScale) * s + m
-            }
+            for (ti in 0 until t) z[ch * t + ti] = (xt[ch * t + ti] / normScale) * s + m
+        }
+        if (vocoderChannels != ldim) return NpArray(intArrayOf(1, channels, t), z)
+        // [1, ldim*compress, T] -> [1, ldim, T*compress]; ch = l*compress + f -> out[l][t*compress + f]
+        val out = FloatArray(z.size)
+        for (l in 0 until ldim) for (fi in 0 until compress) {
+            val ch = l * compress + fi
+            for (ti in 0 until t) out[l * (t * compress) + ti * compress + fi] = z[ch * t + ti]
         }
         return NpArray(intArrayOf(1, ldim, t * compress), out)
     }

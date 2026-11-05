@@ -58,6 +58,18 @@ json.dump(g2p_out, open(os.path.join(out, "g2p.json"), "w"), ensure_ascii=False,
 import blue_onnx
 from blue_onnx import load_text_to_speech, load_voice_style
 
+
+def fix_v3(tts):
+    """Blue V3: de-normalize with stats.npz before the 144-channel vocoder (model card).
+    blue_onnx skips this when the vocoder is not 24-channel, which ruins V3."""
+    import numpy as _np
+    if tts._latent_mean is None or tts._vocoder_in_channels == tts.ldim:
+        return tts
+    def prep(xt):
+        return ((xt / tts._normalizer_scale) * tts._latent_std + tts._latent_mean).astype(_np.float32)
+    tts._prepare_vocoder_latent = prep
+    return tts
+
 class RecordedNoise:
     """Replaces np.random.randn so the noise can be saved and replayed in Kotlin."""
     def __init__(self):
@@ -70,7 +82,7 @@ class RecordedNoise:
 
 for bundle, voices in [("blue_v3", ["Roi", "Rotem"]), ("blue_25", ["female"])]:
     d = os.path.join(models, bundle)
-    tts = load_text_to_speech(d, renikud_path=os.path.join(models, "renikud/model_int8.onnx"))
+    tts = fix_v3(load_text_to_speech(d, renikud_path=os.path.join(models, "renikud/model_int8.onnx")))
     for v in voices:
         style = load_voice_style([os.path.join(d, "voices", v + ".json")])
         for i, s in enumerate(SENTENCES[:3]):
