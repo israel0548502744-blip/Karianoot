@@ -20,7 +20,10 @@ data class ModelInfo(
     fun url(f: ModelFile) = "https://huggingface.co/$repo/resolve/$revision/${f.path}"
 }
 
-data class VoiceInfo(val id: String, val modelId: String, val file: String, val name: String, val note: String, val female: Boolean)
+data class VoiceInfo(val id: String, val modelId: String, val file: String, val name: String, val note: String, val female: Boolean) {
+    /** Denoising steps for "fast / good / best". Blue V3 needs more (measured: 8 steps 5% errors, 16 steps 0.6%). */
+    val steps: IntArray get() = if (modelId == "blue_v3") intArrayOf(12, 16, 24) else intArrayOf(5, 10, 16)
+}
 
 /**
  * Every model the app can use. Only licenses that allow commercial use (MIT / Apache / CC BY).
@@ -39,8 +42,8 @@ object Catalog {
 
     val blueV3 = ModelInfo(
         id = "blue_v3", kind = ModelKind.BLUE,
-        title = "Blue V3 (ניסיוני)",
-        subtitle = "הקולות רועי ורותם. בבדיקה עדיין פחות ברורים מ-Blue 2.5.",
+        title = "Blue V3",
+        subtitle = "הקולות רועי ורותם, הדור החדש. בבדיקה: 99.4% מהמילים נשמעו נכון.",
         repo = "notmax123/BlueV3-onnx", revision = "b26faaa63255d2991998c7f28c10aa4e6026f3c9",
         license = "MIT", credit = "BlueTTS — Maxim Melichov (notmax123)",
         files = listOf(
@@ -86,8 +89,8 @@ object Catalog {
         VoiceInfo("25_m8088", "blue_25", "voices/libri_male_8088.json", "גברי 2", "2.5", female = false),
         VoiceInfo("25_f1088", "blue_25", "voices/libri_female_1088.json", "נשי 2", "2.5", female = true),
         VoiceInfo("25_f6147", "blue_25", "voices/libri_female_6147.json", "נשי 3", "2.5", female = true),
-        VoiceInfo("v3_roi", "blue_v3", "voices/Roi.json", "רועי", "ניסיוני", female = false),
-        VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "ניסיוני", female = true),
+        VoiceInfo("v3_roi", "blue_v3", "voices/Roi.json", "רועי", "גברי · V3", female = false),
+        VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "נשי · V3", female = true),
     )
 
     fun model(id: String) = all.first { it.id == id }
