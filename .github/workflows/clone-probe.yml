@@ -1,0 +1,28 @@
+name: Voice cloning probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["tools/clone_probe.py", ".github/workflows/clone-probe.yml"]
+
+env:
+  BLUE_25_REV: 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e
+  BLUE_V2_REV: cd1093eaa920136e7a727dfb92d5f7879039e587
+  RENIKUD_REV: 679c56ca449d41873fb8ff7711ddf7563d28198f
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q onnxruntime soundfile scipy librosa faster-whisper huggingface_hub "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
+      - name: Download models
+        run: |
+          hf download notmax123/BlueTTS2.5-onnx --revision $BLUE_25_REV --local-dir models/blue_25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/blue-onnx-v2 --revision $BLUE_V2_REV --local-dir models/blue_v2 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision $RENIKUD_REV --local-dir models/renikud
+      - run: python tools/clone_probe.py models clone-out
