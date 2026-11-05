@@ -1,9 +1,9 @@
 package com.karianoot.app
 
 /** One file of a model, pinned to an exact Hugging Face revision. */
-data class ModelFile(val path: String, val size: Long)
+data class ModelFile(val path: String, val size: Long, val repo: String? = null, val revision: String? = null)
 
-enum class ModelKind { G2P, BLUE, SOON }
+enum class ModelKind { G2P, BLUE, CLONE, SOON }
 
 data class ModelInfo(
     val id: String,
@@ -17,10 +17,16 @@ data class ModelInfo(
     val files: List<ModelFile> = emptyList(),
 ) {
     val size: Long get() = files.sumOf { it.size }
-    fun url(f: ModelFile) = "https://huggingface.co/$repo/resolve/$revision/${f.path}"
+    fun url(f: ModelFile) = "https://huggingface.co/${f.repo ?: repo}/resolve/${f.revision ?: revision}/${f.path.substringAfterLast("@")}"
 }
 
-data class VoiceInfo(val id: String, val modelId: String, val file: String, val name: String, val note: String, val female: Boolean) {
+data class VoiceInfo(
+    val id: String, val modelId: String, val file: String, val name: String, val note: String, val female: Boolean,
+    /** A voice the user made from a recording: its style file on the phone. */
+    val customFile: java.io.File? = null,
+    /** Made from a recording whose rights are unclear: fine for personal use, not for an app that is sold. */
+    val personalOnly: Boolean = false,
+) {
     /** Denoising steps for "fast / good / best". Blue V3 needs more (measured: 8 steps 5% errors, 16 steps 0.6%). */
     val steps: IntArray get() = if (modelId == "blue_v3") intArrayOf(12, 16, 24) else intArrayOf(5, 10, 16)
 }
@@ -71,16 +77,32 @@ object Catalog {
         ),
     )
 
+    /**
+     * What it takes to make a voice from a recording (tools/clone_probe.py): Blue v2's audio encoder,
+     * and Blue 2.5's reference encoder and duration predictor. Works with the Blue 2.5 voices.
+     */
+    val clone = ModelInfo(
+        id = "clone", kind = ModelKind.CLONE,
+        title = "ערכת \"קול מהקלטה\"",
+        subtitle = "מאפשרת ליצור קול חדש מקובץ הקלטה (10 שניות ומעלה). עובד יחד עם Blue 2.5.",
+        repo = "notmax123/BlueTTS2.5-onnx", revision = "95feb5d0cbfc8e5a95bffb067d03537cbf35be3e",
+        license = "MIT", credit = "BlueTTS — Maxim Melichov (notmax123)",
+        files = listOf(
+            ModelFile("codec_encoder.onnx", 102_246_772, repo = "notmax123/blue-onnx-v2", revision = "cd1093eaa920136e7a727dfb92d5f7879039e587"),
+            ModelFile("reference_encoder.onnx", 15_024_793),
+            ModelFile("duration_predictor.onnx", 2_151_232),
+        ),
+    )
+
     /** Shown as "coming soon" so the plan is visible inside the app. */
     val soon = listOf(
         ModelInfo("noa", "נועה (Piper)", "קול נשי מהיר מאוד.", ModelKind.SOON, license = "CC BY 4.0", credit = "thewh1teagle"),
-        ModelInfo("clone", "הקול שלי", "מקליטים 15-30 שניות, והאפליקציה מדברת בקול שלך.", ModelKind.SOON, license = "MIT", credit = "BlueTTS / Chatterbox"),
         ModelInfo("chatterbox", "Chatterbox", "שכפול קול רב-לשוני, כבד יותר.", ModelKind.SOON, license = "MIT", credit = "Resemble AI"),
         ModelInfo("omnivoice", "OmniVoice", "600+ שפות ושכפול קול. נבדוק עברית.", ModelKind.SOON, license = "Apache-2.0", credit = "k2-fsa"),
         ModelInfo("orpheus", "Orpheus עברית", "מודל גדול (3B), ניסיוני, ירוץ על ה-NPU.", ModelKind.SOON, license = "לבדיקה", credit = "Canopy Labs"),
     )
 
-    val downloadable = listOf(g2p, blue25, blueV3)
+    val downloadable = listOf(g2p, blue25, blueV3, clone)
     val all = downloadable + soon
 
     val voices = listOf(

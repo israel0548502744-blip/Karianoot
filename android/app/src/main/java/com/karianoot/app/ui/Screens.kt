@@ -48,6 +48,14 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SaveAlt
 import androidx.compose.material.icons.rounded.Share
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -116,8 +124,8 @@ fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, moti
                     when (tab) {
                         Tab.Studio -> StudioScreen(app, sharedText, history) { tab = Tab.Models }
                         Tab.Library -> LibraryScreen(speech, history)
-                        Tab.Models -> ModelsScreen(models)
-                        Tab.About -> AboutScreen()
+                        Tab.Models -> ModelsScreen(app)
+                        Tab.About -> AboutScreen(app)
                     }
                 }
                 BottomBar(tab) { tab = it }
@@ -158,7 +166,10 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val states by models.states.collectAsState()
     val job by app.job.collectAsState()
     var text by remember { mutableStateOf(sharedText ?: "") }
-    val ready = Catalog.voices.filter { states[it.modelId] == ModelState.Ready }
+    val custom by app.voices.custom.collectAsState()
+    val cloning by app.cloning.collectAsState()
+    var newVoice by remember { mutableStateOf(false) }
+    val ready = (Catalog.voices + custom).filter { states[it.modelId] == ModelState.Ready }
     var voiceId by remember { mutableStateOf(Catalog.voices.first().id) }
     val voice = ready.firstOrNull { it.id == voiceId } ?: ready.firstOrNull()
     var speed by remember { mutableFloatStateOf(1.0f) }
@@ -211,6 +222,12 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             if (ready.isEmpty()) Text("אין עדיין קולות מותקנים.", color = C.Faint, fontSize = 14.sp)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 for (v in ready) VoiceChip(v, v.id == voice?.id) { voiceId = v.id }
+                NewVoiceChip(cloning) { newVoice = true }
+            }
+            if (voice?.personalOnly == true) Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.WarningAmber, null, tint = C.Amber, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("קול לשימוש אישי בלבד: זכויות הקול לא ברורות. לא להכניס לאפליקציה שנמכרת.", color = C.Amber, fontSize = 12.sp)
             }
         }
 
@@ -220,6 +237,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             Text("איכות", color = C.Sub, fontSize = 14.sp)
             Segmented(listOf("מהיר", "איכותי", "מקסימום"), quality) { quality = it }
         }
+
+        if (newVoice) NewVoiceDialog(app, states, openModels = { newVoice = false; openModels() }) { newVoice = false }
 
         AnimatedVisibility(busy, enter = fadeIn(), exit = fadeOut()) {
             Section {
@@ -259,8 +278,74 @@ private fun VoiceChip(v: VoiceInfo, selected: Boolean, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(6.dp))
         Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        Text(v.note, color = C.Faint, fontSize = 11.sp)
+        Text(if (v.personalOnly) "⚠ אישי" else v.note, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
     }
+}
+
+@Composable
+private fun NewVoiceChip(cloning: String?, onClick: () -> Unit) {
+    Column(
+        Modifier.width(96.dp).clip(RoundedCornerShape(20.dp)).border(1.dp, C.GoldBrush, RoundedCornerShape(20.dp))
+            .background(Color(0x10FFF4DC)).pressable(enabled = cloning == null, onClick = onClick).padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(C.GoldButton), contentAlignment = Alignment.Center) {
+            if (cloning != null) Wave(Modifier.size(26.dp, 18.dp), animate = true)
+            else Icon(Icons.Rounded.Add, null, tint = Color(0xFF1A1307), modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(if (cloning != null) "מכין…" else "קול חדש", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text("מהקלטה", color = C.Faint, fontSize = 11.sp)
+    }
+}
+
+/** Make a voice from an audio file: name, file, and whose voice it is. */
+@Composable
+private fun NewVoiceDialog(app: KarianootApp, states: Map<String, ModelState>, openModels: () -> Unit, close: () -> Unit) {
+    val ctx = LocalContext.current
+    var name by remember { mutableStateOf("") }
+    var uri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var ownVoice by remember { mutableStateOf(false) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri = it }
+    val kitReady = states["clone"] == ModelState.Ready && states["blue_25"] == ModelState.Ready
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("קול חדש מהקלטה", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!kitReady) {
+                    Text("צריך להוריד קודם את Blue 2.5 ואת \"ערכת קול מהקלטה\" (117MB) במסך המודלים.", color = C.Text, fontSize = 14.sp)
+                    return@Column
+                }
+                Text("בוחרים הקלטה של 10 שניות ומעלה: דיבור ברור, בלי מוזיקה. הקול החדש ידבר בסגנון של ההקלטה. " +
+                    "ההקלטה נשארת בטלפון ולא נשלחת לשום מקום.", color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x55000000))
+                    .border(1.dp, C.Stroke, RoundedCornerShape(14.dp)).padding(12.dp)) {
+                    if (name.isEmpty()) Text("שם הקול (למשל: נמר)", color = C.Faint)
+                    BasicTextField(name, { name = it }, Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = C.Text, fontSize = 16.sp, fontFamily = Rubik), cursorBrush = SolidColor(C.Gold), singleLine = true)
+                }
+                SoftButton(if (uri == null) "בחירת קובץ הקלטה" else "✓ נבחר קובץ (להחלפה)", Modifier.fillMaxWidth(), icon = Icons.Rounded.AudioFile) {
+                    pick.launch(arrayOf("audio/*"))
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(ownVoice, { ownVoice = it }, colors = CheckboxDefaults.colors(checkedColor = C.Gold, uncheckedColor = C.Sub, checkmarkColor = Color(0xFF1A1307)))
+                    Text("זה הקול שלי, או שבעל הקול הסכים", color = C.Text, fontSize = 14.sp)
+                }
+                if (!ownVoice) Text("⚠ הקול יסומן \"שימוש אישי בלבד\": זכויות הקול לא ברורות, ולא מכניסים אותו לאפליקציה שנמכרת.",
+                    color = C.Amber, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        },
+        confirmButton = {
+            if (!kitReady) SoftButton("למסך המודלים", onClick = openModels)
+            else SoftButton("צור קול", enabled = uri != null, color = C.Gold) {
+                app.createVoice(name, uri!!, personalOnly = !ownVoice) { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
+                close()
+            }
+        },
+        dismissButton = { SoftButton("ביטול", onClick = close) },
+    )
 }
 
 @Composable
@@ -358,7 +443,8 @@ fun LibraryScreen(speech: Speech, history: MutableList<Creation>) {
 }
 
 @Composable
-fun ModelsScreen(models: Models) {
+fun ModelsScreen(app: KarianootApp) {
+    val models = app.models
     val states by models.states.collectAsState()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Spacer(Modifier.height(10.dp))
@@ -366,6 +452,7 @@ fun ModelsScreen(models: Models) {
         Text("כל מודל יורד פעם אחת ונשאר בטלפון גם אחרי עדכון של האפליקציה. מקום פנוי: ${formatSize(models.freeSpace())}",
             color = C.Sub, fontSize = 14.sp)
         Catalog.downloadable.forEachIndexed { i, m -> ModelCard(m, states[m.id] ?: ModelState.Missing, models, Modifier.enter(i)) }
+        MyVoices(app)
         Text("בקרוב", color = C.Gold, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
         Catalog.soon.forEach { m -> ModelCard(m, ModelState.Missing, models, Modifier) }
         Spacer(Modifier.height(20.dp))
@@ -408,7 +495,23 @@ private fun ModelCard(m: ModelInfo, state: ModelState, models: Models, modifier:
 }
 
 @Composable
-fun AboutScreen() {
+private fun MyVoices(app: KarianootApp) {
+    val custom by app.voices.custom.collectAsState()
+    if (custom.isEmpty()) return
+    Text("הקולות שלי", color = C.Gold, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+    for (v in custom) Row(Modifier.fillMaxWidth().glass().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(v.name, color = C.Text, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(if (v.personalOnly) "⚠ שימוש אישי בלבד: זכויות הקול לא ברורות" else "הקול שלי / בהסכמה",
+                color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 12.sp)
+        }
+        SoftButton("מחק", icon = Icons.Rounded.Delete, color = C.Red) { app.voices.delete(v) }
+    }
+}
+
+@Composable
+fun AboutScreen(app: KarianootApp) {
+    val custom by app.voices.custom.collectAsState()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Spacer(Modifier.height(10.dp))
         GoldText("אודות", 30.sp)
@@ -426,6 +529,13 @@ fun AboutScreen() {
             }
             Text("ONNX Runtime — Microsoft, רישיון MIT", color = C.Sub, fontSize = 13.sp)
             Text("גופן Rubik — רישיון SIL Open Font License", color = C.Sub, fontSize = 13.sp)
+        }
+        val personal = custom.filter { it.personalOnly }
+        if (personal.isNotEmpty()) Section(title = "⚠ קולות לשימוש אישי בלבד") {
+            Text("הקולות האלה נוצרו מהקלטות שזכויות הקול בהן לא ברורות (למשל קול מ-ElevenLabs). " +
+                "מותר להשתמש בהם רק באופן אישי. אם האפליקציה תימכר, צריך למחוק אותם ולא לכלול אותם בה.",
+                color = C.Amber, fontSize = 13.sp, lineHeight = 19.sp)
+            for (v in personal) Text("• ${v.name}", color = C.Text, fontSize = 14.sp)
         }
         Spacer(Modifier.height(20.dp))
     }

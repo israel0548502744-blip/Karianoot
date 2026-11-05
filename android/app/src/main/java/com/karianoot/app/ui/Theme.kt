@@ -84,6 +84,7 @@ object C {
     val GoldDeep = Color(0xFF9C7424)
     val Green = Color(0xFF7BD88F)
     val Red = Color(0xFFF08A7E)
+    val Amber = Color(0xFFF2B957)
 
     val GoldBrush = Brush.linearGradient(listOf(GoldLight, Gold, GoldDeep, Gold))
     val GoldButton = Brush.horizontalGradient(listOf(Color(0xFFF8E2A4), Color(0xFFDDB45A), Color(0xFFB88A33)))

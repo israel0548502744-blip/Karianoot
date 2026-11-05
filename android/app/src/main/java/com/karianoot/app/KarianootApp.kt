@@ -29,6 +29,7 @@ data class JobState(
 class KarianootApp : Application() {
     lateinit var models: Models
     lateinit var speech: Speech
+    lateinit var voices: Voices
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _job = MutableStateFlow(JobState())
     val job: StateFlow<JobState> = _job
@@ -37,6 +38,7 @@ class KarianootApp : Application() {
         super.onCreate()
         models = Models(this)
         speech = Speech(this, models)
+        voices = Voices(this, models)
         Notify.createChannels(this)
     }
 
@@ -49,6 +51,20 @@ class KarianootApp : Application() {
                 speech.speak(text, voice, opt) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
             }.onSuccess { c -> _job.value = JobState(result = c) }
                 .onFailure { e -> _job.value = JobState(error = e.message ?: e.toString()) }
+        }
+    }
+
+    /** Making a voice from a recording; null when idle, otherwise a status line. */
+    val cloning = MutableStateFlow<String?>(null)
+
+    fun createVoice(name: String, uri: android.net.Uri, personalOnly: Boolean, done: (String) -> Unit) {
+        if (cloning.value != null) return
+        cloning.value = "מכין את הקול…"
+        scope.launch {
+            val msg = runCatching { voices.create(name, uri, personalOnly) }
+                .fold({ "הקול \"${it.name}\" מוכן ✨" }, { "לא הצלחתי ליצור את הקול: ${it.message}" })
+            cloning.value = null
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(msg) }
         }
     }
 

@@ -38,14 +38,17 @@ class Speech(private val ctx: Context, private val models: Models) {
                     onStage("טוען את מנוע ההגייה…", 0f)
                     g2p = HebrewG2P(File(models.dir(Catalog.g2p), "model_int8.onnx").path)
                 }
-                if (ttsModel != voice.modelId) {
+                // Voices made from a recording take their duration from Blue 2.5's z_ref predictor.
+                val dpRef = File(models.dir(Catalog.clone), "duration_predictor.onnx").takeIf { voice.modelId == "blue_25" && it.length() == 2_151_232L }
+                val key = voice.modelId + (if (dpRef != null) "+ref" else "")
+                if (ttsModel != key) {
                     onStage("טוען את הקול…", 0f)
                     tts?.close(); tts = null; ttsModel = null
-                    tts = BlueTts(models.dir(Catalog.model(voice.modelId)), g2p)
-                    ttsModel = voice.modelId
+                    tts = BlueTts(models.dir(Catalog.model(voice.modelId)), g2p, dpRef)
+                    ttsModel = key
                 }
                 val engine = tts!!
-                val v = BlueVoice.load(File(models.dir(Catalog.model(voice.modelId)), voice.file))
+                val v = BlueVoice.load(voice.customFile ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
                 onStage("מקריא…", 0.02f)
                 val wav = engine.synthesize(text, v, opt) { p -> onStage("מקריא…", p) }
                 val name = "karianoot_${System.currentTimeMillis()}.wav"
