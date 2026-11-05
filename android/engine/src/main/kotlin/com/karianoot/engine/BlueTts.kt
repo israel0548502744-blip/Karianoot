@@ -12,13 +12,27 @@ import java.nio.LongBuffer
 import java.text.Normalizer
 import java.util.Random
 
-/** A Blue voice: the two style tensors from a voices/<name>.json file. */
-class BlueVoice(val ttl: NpArray, val dp: NpArray) {
+/**
+ * A Blue voice: the two style tensors from a voices/<name>.json file. A voice made from a
+ * recording ([VoiceCloner]) also keeps its reference latents [zRef], which the z_ref
+ * duration predictor reads instead of [dp].
+ */
+class BlueVoice(val ttl: NpArray, val dp: NpArray, val zRef: NpArray? = null) {
+    fun save(file: File) {
+        val o = JSONObject().put("style_ttl", json(ttl)).put("style_dp", json(dp))
+        if (zRef != null) o.put("z_ref", json(zRef))
+        file.writeText(o.toString())
+    }
+
     companion object {
         fun load(file: File): BlueVoice {
             val o = JSONObject(file.readText())
-            return BlueVoice(tensor(o.getJSONObject("style_ttl")), tensor(o.getJSONObject("style_dp")))
+            return BlueVoice(tensor(o.getJSONObject("style_ttl")), tensor(o.getJSONObject("style_dp")),
+                o.optJSONObject("z_ref")?.let { tensor(it) })
         }
+
+        private fun json(a: NpArray) = JSONObject().put("dims", JSONArray(a.shape.toList()))
+            .put("data", JSONArray().also { arr -> for (v in a.data) arr.put(v.toDouble()) })
 
         /** Average several voices into one speaker (as BlueTTS does with a list of JSONs). */
         fun mix(voices: List<BlueVoice>, weights: List<Float> = List(voices.size) { 1f }): BlueVoice {
@@ -52,6 +66,8 @@ class BlueVoice(val ttl: NpArray, val dp: NpArray) {
 class BlueTts(
     private val dir: File,
     private val g2p: HebrewG2P?,
+    /** Blue 2.5's duration_predictor.onnx (z_ref form), for voices made from a recording. */
+    zRefDurationPredictor: File? = null,
     sessionOptions: () -> OrtSession.SessionOptions = { defaultOptions() },
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment(),
 ) : AutoCloseable {
@@ -74,6 +90,7 @@ class BlueTts(
     private val ldim = cfg.getJSONObject("ttl").getInt("latent_dim")
 
     private val dp: OrtSession
+    private val dpRef: OrtSession? = zRefDurationPredictor?.takeIf { it.exists() }?.let { env.createSession(it.path, sessionOptions()) }
     private val textEnc: OrtSession
     private val vectorEst: OrtSession
     private val vocoder: OrtSession
@@ -151,7 +168,14 @@ class BlueTts(
             val styleTtl = f(ttl.data, *ttl.shape)
             val styleDp = f(sdp.data, *sdp.shape)
 
-            var dur = dp.run(mapOf("text_ids" to textIds, "style_dp" to styleDp, "text_mask" to textMask)).use { r ->
+            val z = voice.zRef
+            var dur = if (z != null && dpRef != null) {
+                val zT = f(z.data, *z.shape)
+                val refMask = f(FloatArray(z.shape[2]) { 1f }, 1, 1, z.shape[2])
+                dpRef.run(mapOf("text_ids" to textIds, "z_ref" to zT, "text_mask" to textMask, "ref_mask" to refMask)).use { r ->
+                    (r.get(0) as OnnxTensor).floatBuffer.get(0)
+                }
+            } else dp.run(mapOf("text_ids" to textIds, "style_dp" to styleDp, "text_mask" to textMask)).use { r ->
                 (r.get(0) as OnnxTensor).floatBuffer.get(0)
             }
             dur /= maxOf(opt.speed, 1e-6f)
@@ -261,7 +285,7 @@ class BlueTts(
     fun encode(text: String): LongArray =
         HebrewG2P.codePoints(text).map { (vocab[it] ?: padId).toLong() }.toLongArray()
 
-    override fun close() { dp.close(); textEnc.close(); vectorEst.close(); vocoder.close() }
+    override fun close() { dp.close(); dpRef?.close(); textEnc.close(); vectorEst.close(); vocoder.close() }
 
     companion object {
         fun defaultOptions() = OrtSession.SessionOptions().apply {

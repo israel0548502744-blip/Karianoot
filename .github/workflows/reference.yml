@@ -11,6 +11,7 @@ env:
   BLUE_V3_REV: b26faaa63255d2991998c7f28c10aa4e6026f3c9
   BLUE_25_REV: 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e
   RENIKUD_REV: 679c56ca449d41873fb8ff7711ddf7563d28198f
+  BLUE_V2_REV: cd1093eaa920136e7a727dfb92d5f7879039e587
 
 jobs:
   golden:
@@ -25,13 +26,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models
-          key: models-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}
+          key: models2-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}-${{ env.BLUE_V2_REV }}
       - name: Download models
         run: |
           pip install -q huggingface_hub
           [ -d models/blue_v3 ] || hf download notmax123/BlueV3-onnx --revision $BLUE_V3_REV --local-dir models/blue_v3 --exclude "*.md" --exclude ".gitattributes"
           [ -d models/blue_25 ] || hf download notmax123/BlueTTS2.5-onnx --revision $BLUE_25_REV --local-dir models/blue_25 --exclude "*.md" --exclude ".gitattributes"
           [ -f models/renikud/model_int8.onnx ] || hf download notmax123/RenikudPlus model_int8.onnx --revision $RENIKUD_REV --local-dir models/renikud
+          [ -f models/clone/codec_encoder.onnx ] || hf download notmax123/blue-onnx-v2 codec_encoder.onnx --revision $BLUE_V2_REV --local-dir models/clone
           rm -rf models/*/.cache
           du -sh models/*
       - name: Install the original packages
@@ -55,7 +57,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: models
-          key: models-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}
+          key: models2-${{ env.BLUE_V3_REV }}-${{ env.BLUE_25_REV }}-${{ env.RENIKUD_REV }}-${{ env.BLUE_V2_REV }}
           fail-on-cache-miss: true
       - uses: actions/download-artifact@v4
         with:

@@ -98,4 +98,39 @@ class GoldenTest {
             assertTrue(wav.size > tts.sampleRate)
         }
     }
+
+    @Test fun voiceFromRecordingMatchesPython() {
+        need()
+        val input = Npy.read(File(golden, "clone_input.npy")).data
+        val t0 = System.nanoTime()
+        val mel = VoiceCloner.features(input)
+        val refMel = Npy.read(File(golden, "clone_mel.npy"))
+        assertEquals("mel shape", refMel.shape.toList(), mel.shape.toList())
+        var md = 0.0
+        for (i in mel.data.indices) md = maxOf(md, abs(mel.data[i] - refMel.data[i]).toDouble())
+        println("CHECK clone mel maxdiff=${"%.5f".format(md)} shape=${mel.shape.toList()} (${"%.0f".format((System.nanoTime() - t0) / 1e6)} ms)")
+        assertTrue("mel differs: $md", md < 1e-2)
+
+        VoiceCloner(File(models, "clone/codec_encoder.onnx"), File(models, "blue_25/reference_encoder.onnx")).use { cl ->
+            val v = cl.clone(input)
+            val z = Npy.read(File(golden, "clone_z.npy")); val ttl = Npy.read(File(golden, "clone_ttl.npy"))
+            assertEquals("z shape", z.shape.toList(), v.zRef!!.shape.toList())
+            val cz = corr(v.zRef.data, z.data); val ct = corr(v.ttl.data, ttl.data)
+            println("CHECK clone z corr=${"%.6f".format(cz)} ttl corr=${"%.6f".format(ct)}")
+            assertTrue(cz > 0.999 && ct > 0.999)
+            val ref = JSONObject(File(golden, "clone.json").readText())
+            BlueTts(File(models, "blue_25"), null, File(models, "blue_25/duration_predictor.onnx")).use { tts ->
+                val (wav, dur) = tts.infer(ref.getString("ipa"), v, BlueTts.Options(steps = 10), BlueTts.gaussian(1))
+                println("CHECK clone dur py=${"%.3f".format(ref.getDouble("dur"))} kt=${"%.3f".format(dur)}")
+                assertEquals(ref.getDouble("dur"), dur.toDouble(), 0.01)
+                Wav.write(File(out, "clone_voice.wav"), Wav.limitPeak(wav), tts.sampleRate)
+            }
+        }
+    }
+
+    private fun corr(a: FloatArray, b: FloatArray): Double {
+        var d = 0.0; var x = 0.0; var y = 0.0
+        for (i in a.indices) { d += a[i] * b[i]; x += a[i] * a[i]; y += b[i] * b[i] }
+        return d / sqrt(x * y + 1e-12)
+    }
 }

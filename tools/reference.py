@@ -103,3 +103,29 @@ for bundle, voices in [("blue_v3", ["Roi", "Rotem"]), ("blue_25", ["female"])]:
                       open(os.path.join(out, tag + ".json"), "w"), ensure_ascii=False)
             sf.write(os.path.join(out, tag + ".wav"), blue_onnx.limit_peak(wav[0]), tts.sample_rate)
             print(tag, "dur", float(np.asarray(dur).reshape(-1)[0]), "samples", wav.shape)
+
+
+# ---- Voice from a recording (VoiceCloner.kt) ---------------------------------------
+# Reference audio is one of the golden outputs above, so no personal audio is involved.
+import onnxruntime as _ort
+from blue_onnx.style import _linear_mel_features, _trim_reference_latents
+ref = np.load(os.path.join(out, "blue_25_female_1_wav.npy"))[0].astype(np.float32)
+np.save(os.path.join(out, "clone_input.npy"), ref)
+mel = _linear_mel_features(ref, sample_rate=44100, n_fft=2048, win_length=2048, hop_length=512, n_mels=228)
+np.save(os.path.join(out, "clone_mel.npy"), mel)
+frames = (mel.shape[2] // 6) * 6
+codec = _ort.InferenceSession(os.path.join(models, "clone/codec_encoder.onnx"))
+z = codec.run(None, {"mel": mel[:, :, :frames]})[0].astype(np.float32)
+z = _trim_reference_latents(z)
+np.save(os.path.join(out, "clone_z.npy"), z)
+refenc = _ort.InferenceSession(os.path.join(models, "blue_25/reference_encoder.onnx"))
+mask = np.ones((1, 1, z.shape[2]), np.float32)
+ttl = refenc.run(None, {"z_ref": z, "mask": mask})[0].astype(np.float32)
+np.save(os.path.join(out, "clone_ttl.npy"), ttl)
+dpz = _ort.InferenceSession(os.path.join(models, "blue_25/duration_predictor.onnx"))
+tts25 = fix_v3(load_text_to_speech(os.path.join(models, "blue_25")))
+ipa = g2p.phonemize(SENTENCES[2])
+ids, tmask = tts25.text_processor([ipa], ["he"])
+dur = float(dpz.run(None, {"text_ids": ids, "z_ref": z, "text_mask": tmask, "ref_mask": mask})[0].reshape(-1)[0])
+json.dump({"ipa": ipa, "dur": dur}, open(os.path.join(out, "clone.json"), "w"), ensure_ascii=False)
+print("clone: mel", mel.shape, "z", z.shape, "ttl", ttl.shape, "dur", dur)
