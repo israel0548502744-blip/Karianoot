@@ -1,10 +1,15 @@
 # Karianoot (קריינות)
 
+## ⚠️ חובה: לענות למשתמש בעברית בלבד
+- **כל הודעה למשתמש בעברית בלבד**, כולל עדכוני ביניים, הודעות "ממתין", סיכומים והודעת הסיום. בלי יוצא מן הכלל.
+- המשתמש לא מבין אנגלית, וכבר ביקש את זה הרבה פעמים. לפני כל הודעה: לבדוק שהיא בעברית.
+- קוד, שמות קבצים ופקודות נשארים כמו שהם, אבל ההסבר סביבם בעברית.
+
 Android app (Galaxy S25 Ultra, Snapdragon 8 Elite): Hebrew text → narration, fully on-device.
 The user makes football-tips videos; this replaces ElevenLabs for their Hebrew voiceovers.
 
 ## Rules
-- Answer the user in Hebrew. They are not a developer: explain simply.
+- The user is not a developer: explain simply (in Hebrew, see above).
 - **Only commercially usable licenses** (MIT / Apache / BSD / CC BY). No non-commercial (NC) models or code.
   CC BY needs credit in the app's About screen (`Catalog.credit`).
 - The APK stays small. Models are downloaded inside the app (`Models.kt`, Android DownloadManager) into
