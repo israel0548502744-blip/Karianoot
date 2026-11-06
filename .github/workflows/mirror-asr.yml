@@ -1,0 +1,32 @@
+name: Mirror the Hebrew speech recognizer for offline checks
+
+# Copies ivrit-ai/whisper-large-v3-turbo-ct2 (Apache-2.0) into a release, so quality checks
+# (did the voice say the words right?) can run where Hugging Face is not reachable.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/mirror-asr.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q huggingface_hub
+      - name: Download
+        run: |
+          hf download ivrit-ai/whisper-large-v3-turbo-ct2 --local-dir asr --exclude "*.md" --exclude ".gitattributes"
+          rm -rf asr/.cache && ls -la asr && tar cf asr.tar asr && ls -la asr.tar
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete asr-mirror -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create asr-mirror asr.tar -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "ASR mirror (for tools)" --notes "ivrit-ai/whisper-large-v3-turbo-ct2 (Apache-2.0) for offline quality checks. Not the app."
