@@ -15,4 +15,8 @@ class PronounceTest {
         assertEquals("היחסים טובים", Pronounce.apply("היחסים טובים", fixes))
         assertEquals("abc", Pronounce.apply("abc", emptyList()))
     }
+
+    @Test fun yachasGetsTheClearerSpelling() {
+        assertEquals("tistaklˈu ʔˈal hajjˈaχas, vehajjˈaχas hajaχasˈim", BlueTts.fixIpa("tistaklˈu ʔˈal hajˈaχas, vehajˈaχas hajaχasˈim"))
+    }
 }

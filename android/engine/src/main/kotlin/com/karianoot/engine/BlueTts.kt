@@ -136,7 +136,7 @@ class BlueTts(
     fun synthesize(text: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
                    onProgress: (Float) -> Unit = {}): FloatArray {
         val cleaned = stripEmoji(text)
-        val ipa = if (cleaned.any { it.code in 0x0590..0x05FF }) g2p!!.phonemize(cleaned) else cleaned
+        val ipa = if (cleaned.any { it.code in 0x0590..0x05FF }) fixIpa(g2p!!.phonemize(cleaned)) else cleaned
         return synthesizePhonemes(ipa, voice, opt, noise, onProgress)
     }
 
@@ -288,6 +288,18 @@ class BlueTts(
     override fun close() { dp.close(); dpRef?.close(); textEnc.close(); vectorEst.close(); vocoder.close() }
 
     companion object {
+        val IPA_FIXES = mapOf("hajˈaχas" to "hajjˈaχas")
+
+        /**
+         * Words the voices tend to blur, with a clearer spelling the user picked by ear.
+         * "היחס": a doubled y (like a dagesh) keeps "על היחס" / "והיחס" from turning into "ליחס" / "והיאס".
+         */
+        fun fixIpa(ipa: String): String {
+            var out = ipa
+            for ((a, b) in IPA_FIXES) out = out.replace(a, b)
+            return out
+        }
+
         fun defaultOptions() = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             setIntraOpNumThreads(minOf(8, Runtime.getRuntime().availableProcessors()))
