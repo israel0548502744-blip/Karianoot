@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import com.karianoot.engine.BlueTts
 import com.karianoot.engine.BlueVoice
 import com.karianoot.engine.HebrewG2P
+import com.karianoot.engine.Pronounce
 import com.karianoot.engine.Wav
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -21,7 +22,7 @@ data class Creation(val file: File, val text: String, val voice: String, val sec
  * Keeps one loaded voice engine at a time (each Blue bundle takes a few hundred MB of memory)
  * and runs synthesis off the main thread.
  */
-class Speech(private val ctx: Context, private val models: Models) {
+class Speech(private val ctx: Context, private val models: Models, private val fixes: () -> List<Pronounce.Fix> = { emptyList() }) {
     private val lock = Mutex()
     private var g2p: HebrewG2P? = null
     private var tts: BlueTts? = null
@@ -50,7 +51,7 @@ class Speech(private val ctx: Context, private val models: Models) {
                 val engine = tts!!
                 val v = BlueVoice.load(voice.customFile ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
                 onStage("מקריא…", 0.02f)
-                val wav = engine.synthesize(text, v, opt) { p -> onStage("מקריא…", p) }
+                val wav = engine.synthesize(Pronounce.apply(text, fixes()), v, opt) { p -> onStage("מקריא…", p) }
                 val name = "karianoot_${System.currentTimeMillis()}.wav"
                 val f = File(creationsDir, name)
                 Wav.write(f, wav, engine.sampleRate)

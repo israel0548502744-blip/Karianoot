@@ -53,6 +53,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -169,6 +170,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val custom by app.voices.custom.collectAsState()
     val cloning by app.cloning.collectAsState()
     var newVoice by remember { mutableStateOf(false) }
+    var fixesOpen by remember { mutableStateOf(false) }
+    val fixes by app.pronounce.list.collectAsState()
     val ready = (Catalog.voices + custom).filter { states[it.modelId] == ModelState.Ready }
     var voiceId by remember { mutableStateOf(Catalog.voices.first().id) }
     val voice = ready.firstOrNull { it.id == voiceId } ?: ready.firstOrNull()
@@ -236,7 +239,10 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             LabeledSlider("הפסקה בין משפטים", "%.2f שנ׳".format(pause), pause, 0f..0.8f) { pause = it }
             Text("איכות", color = C.Sub, fontSize = 14.sp)
             Segmented(listOf("מהיר", "איכותי", "מקסימום"), quality) { quality = it }
+            SoftButton(if (fixes.isEmpty()) "תיקוני הגייה" else "תיקוני הגייה (${fixes.size})", Modifier.fillMaxWidth(),
+                icon = Icons.Rounded.RecordVoiceOver) { fixesOpen = true }
         }
+        if (fixesOpen) PronounceDialog(app) { fixesOpen = false }
 
         if (newVoice) NewVoiceDialog(app, states, openModels = { newVoice = false; openModels() }) { newVoice = false }
 
@@ -297,6 +303,43 @@ private fun NewVoiceChip(cloning: String?, onClick: () -> Unit) {
         Text(if (cloning != null) "מכין…" else "קול חדש", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
         Text("מהקלטה", color = C.Faint, fontSize = 11.sp)
     }
+}
+
+/** "Say this word like that": the user's own pronunciation fixes. */
+@Composable
+private fun PronounceDialog(app: KarianootApp, close: () -> Unit) {
+    val list by app.pronounce.list.collectAsState()
+    var word by remember { mutableStateOf("") }
+    var say by remember { mutableStateOf("") }
+    @Composable fun Field(value: String, hint: String, onChange: (String) -> Unit) {
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x55000000))
+            .border(1.dp, C.Stroke, RoundedCornerShape(14.dp)).padding(12.dp)) {
+            if (value.isEmpty()) Text(hint, color = C.Faint)
+            BasicTextField(value, onChange, Modifier.fillMaxWidth(),
+                textStyle = TextStyle(color = C.Text, fontSize = 16.sp, fontFamily = Rubik), cursorBrush = SolidColor(C.Gold), singleLine = true)
+        }
+    }
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("תיקוני הגייה", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("מילה שיוצאת לא נכון? כתבו אותה, ואיך היא צריכה להישמע (בכתיב \"כמו שזה נשמע\"). " +
+                    "התיקון חל על כל הקריינויות, גם עם ו/ה/ב/ל/מ/ש/כ לפני המילה.", color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
+                Field(word, "המילה (למשל: היחס)") { word = it }
+                Field(say, "איך להגיד אותה (למשל: הַ-יַאחַס)") { say = it }
+                SoftButton("הוספה", Modifier.fillMaxWidth(), icon = Icons.Rounded.Add, enabled = word.isNotBlank() && say.isNotBlank(), color = C.Gold) {
+                    app.pronounce.add(word, say); word = ""; say = ""
+                }
+                for (f in list) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${f.word}  ←  ${f.sayAs}", color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Icon(Icons.Rounded.Delete, "מחיקה", tint = C.Sub, modifier = Modifier.size(22.dp).pressable { app.pronounce.remove(f) })
+                }
+            }
+        },
+        confirmButton = { SoftButton("סגירה", onClick = close) },
+    )
 }
 
 /** Make a voice from an audio file: name, file, and whose voice it is. */
