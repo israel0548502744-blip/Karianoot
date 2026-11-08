@@ -121,7 +121,7 @@ object Catalog {
         VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "נשי · V3", female = true),
         // Made from the owner's ElevenLabs clips (tools/namer.py): personal use only, see assets/voices/README.md.
         VoiceInfo("namer", "blue_25", "", "נמר", "שדרן", female = false, personalOnly = true,
-            asset = "voices/namer.json", needs = listOf("blue_25", "clone"), liveliness = 1.2f),
+            asset = "voices/namer.json", needs = listOf("blue_25", "clone"), liveliness = 1.1f),
     )
 
     fun model(id: String) = all.first { it.id == id }

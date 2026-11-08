@@ -80,12 +80,12 @@ class BlueTts(
         val silence: Float = 0.0f,
         val peakLimit: Float? = 0.95f,
         /**
-         * Speak each sentence on its own (short ones are joined). In listening tests this removed the
-         * swallowed and mixed-up words of long passages; the pause between them is [silence].
+         * Speak the text in short pieces of two or three sentences ([CHUNK_CHARS]). In listening tests this removed
+         * the swallowed and mixed-up words of long passages; the pause between pieces is [silence].
          */
         val perSentence: Boolean = true,
         /**
-         * Liveliness: scales the starting noise of the flow. 1.0 = the model's own; the user picked 1.2 by ear
+         * Liveliness: scales the starting noise of the flow. 1.0 = the model's own; the user picked 1.1 for Namer by ear (round 3)
          * as less robotic (more pitch movement, same word accuracy in tests).
          */
         val temperature: Float = 1.0f,
@@ -156,10 +156,11 @@ class BlueTts(
      */
     fun synthesizeParts(text: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
                         onProgress: (Float) -> Unit = {}): List<Part> {
-        val pieces = chunkText(stripEmoji(text), if (opt.perSentence) 40 else 220)
+        val pieces = chunkText(stripEmoji(text), if (opt.perSentence) CHUNK_CHARS else 220)
         return pieces.mapIndexed { i, piece ->
             val ipa = if (piece.any { it.code in 0x0590..0x05FF }) fixIpa(g2p!!.phonemize(piece)) else piece
-            Part(piece, infer(ipa.replace(Regex("\\s+"), " ").trim(), voice, opt, noise).first).also { onProgress((i + 1f) / pieces.size) }
+            Part(piece, fadeEdges(infer(ipa.replace(Regex("\\s+"), " ").trim(), voice, opt, noise).first, sampleRate))
+                .also { onProgress((i + 1f) / pieces.size) }
         }
     }
 
@@ -320,6 +321,21 @@ class BlueTts(
     override fun close() { dp.close(); dpRef?.close(); textEnc.close(); vectorEst.close(); vocoder.close() }
 
     companion object {
+        /**
+         * Text per synthesis pass when [Options.perSentence]: two or three sentences. Measured (ASR, 4 takes): up to
+         * ~130 characters is as accurate as one sentence at a time, the whole passage at once drops words, and
+         * fewer joins sound less "stop-and-go" (the user's note).
+         */
+        const val CHUNK_CHARS = 130
+
+        /** 25 ms fade in/out so joined pieces don't click (as the original LightBlue code did). */
+        fun fadeEdges(w: FloatArray, rate: Int, ms: Int = 25): FloatArray {
+            val n = rate * ms / 1000
+            if (w.size <= 2 * n) return w
+            for (i in 0 until n) { val g = i.toFloat() / n; w[i] *= g; w[w.size - 1 - i] *= g }
+            return w
+        }
+
         val IPA_FIXES = mapOf(
             "hajˈaχas" to "hajjˈaχas",       // היחס: doubled y (picked by ear)
             "baʁtslˈona" to "baʁtselˈona",   // ברצלונה: בַּרְצֶלוֹנָה, the G2P drops the vowel after צ
