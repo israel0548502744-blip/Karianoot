@@ -17,8 +17,8 @@ jobs:
     steps:
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install -q chatterbox-tts huggingface_hub soundfile "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+          python-version: "3.12"
+      - run: pip install -q huggingface_hub soundfile "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
       - name: Reference clip (Blue 2.5, LibriTTS male voice)
         run: |
           hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
@@ -34,6 +34,10 @@ jobs:
                    lang="he", style=st, total_step=10, text_is_phonemes=True)
           sf.write("ref_male.wav", limit_peak(w[0]), 44100)
           PY
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -q chatterbox-tts soundfile
       - name: Generate
         run: |
           mkdir -p out
