@@ -1,0 +1,64 @@
+name: Chatterbox Hebrew probe
+
+# Does Chatterbox Multilingual (MIT) speak good Hebrew, and does "exaggeration" add emotion?
+# Generic voices only (its default voice, and a Blue 2.5 LibriTTS voice as the reference clip).
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/chatterbox-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -q chatterbox-tts huggingface_hub soundfile "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+      - name: Reference clip (Blue 2.5, LibriTTS male voice)
+        run: |
+          hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          import numpy as np, soundfile as sf
+          from blue_onnx import load_text_to_speech, load_voice_style, limit_peak
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx"); t = load_text_to_speech("blue25")
+          st = load_voice_style(["blue25/voices/libri_male_6209.json"])
+          np.random.seed(0)
+          w, _ = t(g.phonemize("ערב טוב לכולם, היום יש לנו שלושה משחקים מעולים. אני ממליץ לכם לשים לב ליחס, כי הוא פשוט מצוין."),
+                   lang="he", style=st, total_step=10, text_is_phonemes=True)
+          sf.write("ref_male.wav", limit_peak(w[0]), 44100)
+          PY
+      - name: Generate
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import time, torch, soundfile as sf
+          from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+          m = ChatterboxMultilingualTTS.from_pretrained(device="cpu")
+          S = ["ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה.",
+               "תסתכלו על היחס, והיחס פה פשוט מטורף. אני ממליץ לשים על ניצחון של ריאל!"]
+          for ref in [None, "ref_male.wav"]:
+              for ex, cfg in [(0.5, 0.5), (0.8, 0.3), (1.2, 0.3)]:
+                  for i, s in enumerate(S):
+                      t0 = time.time()
+                      torch.manual_seed(i)
+                      w = m.generate(s, language_id="he", audio_prompt_path=ref, exaggeration=ex, cfg_weight=cfg)
+                      name = f"cb_{'default' if ref is None else 'male'}_ex{ex}_cfg{cfg}_{i}.wav"
+                      sf.write("out/" + name, w.squeeze(0).numpy(), m.sr)
+                      print("GEN", name, f"{time.time()-t0:.1f}s", flush=True)
+          PY
+          cp ref_male.wav out/
+          cd out && tar czf ../chatterbox_samples.tgz . && cd .. && ls -la chatterbox_samples.tgz
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete chatterbox-samples -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create chatterbox-samples chatterbox_samples.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Chatterbox Hebrew probe (for tools)" --notes "Chatterbox Multilingual (MIT) Hebrew samples with generic voices, for comparison. Not the app."
