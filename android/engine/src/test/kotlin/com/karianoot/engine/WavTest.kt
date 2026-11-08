@@ -9,7 +9,7 @@ import kotlin.math.sin
 class WavTest {
     @Test fun writeThenReadGivesTheSameSamples() {
         val a = FloatArray(44100) { (0.5 * sin(it * 0.01)).toFloat() }
-        val f = File.createTempFile("k", ".wav")
+        val f = File.createTempFile("karianoot", ".wav")
         Wav.write(f, a, 44100)
         val (b, rate) = Wav.read(f)
         assertEquals(44100, rate)
