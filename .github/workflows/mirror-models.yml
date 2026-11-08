@@ -23,13 +23,14 @@ jobs:
         run: |
           hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir m/blue_25 --exclude "*.md" --exclude ".gitattributes"
           hf download notmax123/blue-onnx-v2 codec_encoder.onnx --revision cd1093eaa920136e7a727dfb92d5f7879039e587 --local-dir m/clone
+          hf download notmax123/BlueV3-onnx --revision b26faaa63255d2991998c7f28c10aa4e6026f3c9 --local-dir m/blue_v3 --exclude "*.md" --exclude ".gitattributes"
           hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir m/renikud
           rm -rf m/*/.cache
-          cd m && tar czf ../blue25.tgz blue_25 && tar czf ../clone.tgz clone && tar czf ../renikud.tgz renikud && cd .. && ls -la *.tgz
+          cd m && tar czf ../blue25.tgz blue_25 && tar czf ../clone.tgz clone && tar czf ../renikud.tgz renikud && tar czf ../bluev3.tgz blue_v3 && cd .. && ls -la *.tgz
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete models-mirror -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
-          gh release create models-mirror blue25.tgz clone.tgz renikud.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+          gh release create models-mirror blue25.tgz clone.tgz renikud.tgz bluev3.tgz -R "$GITHUB_REPOSITORY" --prerelease \
             --title "Model mirror (for tools)" --notes "MIT / Apache-2.0 model files mirrored from Hugging Face for offline tools. Not the app."
