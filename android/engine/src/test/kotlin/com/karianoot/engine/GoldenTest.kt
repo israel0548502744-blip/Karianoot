@@ -33,7 +33,8 @@ class GoldenTest {
             val ms = (System.nanoTime() - t0) / 1e6
             val ok = got == c.getString("ipa")
             if (!ok) bad++
-            println("CHECK g2p ${if (ok) "PASS" else "FAIL"} (${"%.0f".format(ms)} ms) ${c.getString("text")}\n   python: ${c.getString("ipa")}\n   kotlin: $got")
+            println("CHECK g2p ${if (ok) "PASS" else "FAIL"} (${"%.0f".format(ms)} ms) ${c.getString("text")}")
+            if (!ok) println("CHECK   python: ${c.getString("ipa")}\nCHECK   kotlin: $got")
         }
         assertEquals("G2P mismatches", 0, bad)
     }
