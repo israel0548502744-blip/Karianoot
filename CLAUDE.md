@@ -28,9 +28,19 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - `.github/workflows/probe-models.yml` — lists files/sizes/licenses of model repos (this sandbox can't reach HF).
 - No local Android SDK here: CI builds the APK (`build-apk.yml`, release `apk-N`).
 
+## Notes (Nov 2026)
+- Numbers: `HebrewNumbers.kt` is a port of `hebrew-num2words` (golden: `tools/numbers_golden.py` → test resources);
+  `HebrewG2P.phonemize` runs it first, like RenikudPlus.
+- `BlueTts.Options.perSentence` (default on): each sentence is synthesized alone; fewer swallowed/mixed words.
+- `BlueTts.IPA_FIXES`: "היחס" → doubled y (the user picked it by ear). User fixes: `Pronounce.kt` + "תיקוני הגייה" dialog.
+- Namer ("נמר"): `app/src/main/assets/voices/namer.json`, made from the user's ElevenLabs clips (the mp3s are NOT in
+  git). Personal use only; needs Blue 2.5 + the clone kit (its z_ref duration predictor).
+- Offline quality loop: release `asr-mirror` (ivrit-ai whisper ct2) + `models-mirror`; scripts in the session scratchpad
+  synthesize, transcribe and score (CER) settings. Whisper "corrects" words, so the user's ear decides close calls.
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
-2. Hebrew number/date normalization (port `hebrew_num2words` / blue `text_norm`).
+2. Hebrew number/date normalization (done: HebrewNumbers.kt).
 3. "My voice": Blue zero-shot from a recording (blue-onnx-v2 `codec_encoder`/`style_encoder`), then Chatterbox.
 4. Noa (Piper, CC BY) with Phonikud; OmniVoice (check Hebrew); Orpheus Hebrew (check license) on the NPU.
 5. NPU (QNN) for the heavy graphs; background music mixing; templates for the football videos.
