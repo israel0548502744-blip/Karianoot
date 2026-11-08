@@ -1,0 +1,71 @@
+name: QwenTTS-he on qwentts.cpp (speed probe)
+
+# The phone path: notmax123/QwenTTS-he-1.7B-GGUF (Apache-2.0, Q4_K_M, ~1.5 GB) on qwentts.cpp (MIT, GGML, no Python).
+# Measures speed on a 4-core CPU and checks the quantized model still speaks right. Generic reference voice only.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-cpp-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q libopenblas-dev cmake > /dev/null
+      - name: Build qwentts.cpp (CPU)
+        run: |
+          git clone --depth 1 https://github.com/ServeurpersoCom/qwentts.cpp
+          cd qwentts.cpp && git log -1 --format="qwentts.cpp %H %cd" && git submodule update --init --depth 1 || true
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_BLAS=ON > /dev/null && cmake --build build -j 4 --target qwen-tts qwen-codec 2>&1 | tail -3
+          ls -la build/qwen-tts
+      - name: Models, reference clip, IPA
+        run: |
+          pip install -q huggingface_hub soundfile "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir qgguf
+          hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          import numpy as np, soundfile as sf
+          from blue_onnx import load_text_to_speech, load_voice_style, limit_peak
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx"); t = load_text_to_speech("blue25")
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          REF = "ערב טוב לכולם. היום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק על מה כדאי לשים."
+          np.random.seed(0)
+          w, _ = t(fix(REF), lang="he", style=load_voice_style(["blue25/voices/libri_male_8088.json"]), total_step=10, text_is_phonemes=True)
+          sf.write("ref.wav", limit_peak(w[0]), 44100); open("ref.txt", "w").write(fix(REF))
+          S = ["ערב טוב לכל האוהדים!", "הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה.", "תסתכלו על היחס, והיחס פה פשוט מטורף.",
+               "אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות.", "מי שעוד לא הצטרף לקבוצה, זה הזמן.", "בהצלחה לכולם, ונתראה במשחק הבא!"]
+          for i, s in enumerate(S): open(f"s{i}.txt", "w").write(fix(s))
+          PY
+      - name: Synthesize and time
+        run: |
+          mkdir -p out; Q=qwentts.cpp/build/qwen-tts; M=qgguf/qwen-talker-1.7b-base-Q4_K_M.gguf; C=qgguf/qwen-tokenizer-12hz-Q4_K_M.gguf
+          $Q --help 2>&1 | head -40
+          for mode in xvec icl; do
+            for i in 0 1 2 3 4 5; do
+              extra=""; [ $mode = icl ] && extra="--ref-text ref.txt"
+              s=$(date +%s.%N)
+              $Q --model $M --codec $C --ref-wav ref.wav $extra --lang auto --greedy -o out/${mode}_$i.wav < s$i.txt > log_${mode}_$i.txt 2>&1 || tail -5 log_${mode}_$i.txt
+              e=$(date +%s.%N)
+              python -c "import soundfile as sf; d=sf.info('out/${mode}_$i.wav').duration; print('TIME $mode $i', round($e-$s,1), 's for', round(d,1), 's audio, RTF', round(($e-$s)/d,2))"
+            done
+          done
+          tail -15 log_icl_0.txt
+          cp ref.wav out/ && cd out && tar czf ../qwencpp_samples.tgz . && cd ..
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f qwencpp_samples.tgz ] || exit 0
+          gh release delete qwencpp-samples -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwencpp-samples qwencpp_samples.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "QwenTTS-he on qwentts.cpp (for tools)" --notes "Q4_K_M GGUF on CPU, generic voice, speed probe. Not the app."
