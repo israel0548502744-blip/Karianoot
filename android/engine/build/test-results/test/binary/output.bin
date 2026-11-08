@@ -1,0 +1,27 @@
+JCHECK g2p PASS (44 ms) שלום, זהו מודל דיבור בעברית.
+;   python: ʃalˈom, zˈehu modˈel dibˈuʁ beʔivʁˈit.
+;   kotlin: ʃalˈom, zˈehu modˈel dibˈuʁ beʔivʁˈit.
+]CHECK g2p PASS (78 ms) היחס הוא 2.5, ואם ריאל מנצחת 3-1 זה כבר 7.20.
+�   python: hajˈaχas hˈu ʃtˈajim vaχˈetsi, veʔˈim ʁeʔˈal menatsˈaχat ʃalˈoʃ ʔaχˈat zˈe kvˈaʁ ʃˈeva ʔesʁˈim.
+�   kotlin: hajˈaχas hˈu ʃtˈajim vaχˈetsi, veʔˈim ʁeʔˈal menatsˈaχat ʃalˈoʃ ʔaχˈat zˈe kvˈaʁ ʃˈeva ʔesʁˈim.
+SCHECK g2p PASS (35 ms) תסתכלו על הַיַּחַס, זה הימור טוב.
+>   python: tistaklˈu ʔˈal hajˈaχas, zˈe himˈuʁ tˈov.
+>   kotlin: tistaklˈu ʔˈal hajˈaχas, zˈe himˈuʁ tˈov.
+qCHECK g2p PASS (28 ms) שָׂרָה קָנְתָה סֵפֶר, וְהַבַּיִת שֶׁלָּהּ יָפֶה.
+B   python: sˈaʁa kantˈa sˈefeʁ, vehabˈajit ʃelˈah jafˈe.
+B   kotlin: sˈaʁa kantˈa sˈefeʁ, vehabˈajit ʃelˈah jafˈe.
+mCHECK g2p PASS (42 ms) הוא אָכַל, והיא אוֹכֶלֶת. ספר אחד, סִפֵּר שניים.
+W   python: hˈu ʔaχˈal, vehˈi ʔoχˈelet. sˈefeʁ ʔeχˈad, sˈipeʁ ʃnˈajim.
+W   kotlin: hˈu ʔaχˈal, vehˈi ʔoχˈelet. sˈefeʁ ʔeχˈad, sˈipeʁ ʃnˈajim.
+xCHECK g2p PASS (43 ms) כּוֹל הַכָּבוֹד לַשּׁוֹפֵט, בְּרֶצְלוֹנָה נִצְּחָה.
+@   python: kˈol hakavˈod laʃofˈet, beʁetslˈona nitsχˈa.
+@   kotlin: kˈol hakavˈod laʃofˈet, beʁetslˈona nitsχˈa.
+*CHECK g2p PASS (29 ms) הַיָּאחַס
+   python: hajˈaχas
+   kotlin: hajˈaχas
+5CHECK g2p PASS (19 ms) שׁוּק וּמוּסָךְ
+   python: ʃˈuk umusˈaχ
+   kotlin: ʃˈuk umusˈaχ
+"CHECK g2p PASS (31 ms) רוּחַ
+   python: ʁˈuaχ
+   kotlin: ʁˈuaχ

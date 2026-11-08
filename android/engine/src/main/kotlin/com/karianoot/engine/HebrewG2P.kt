@@ -12,7 +12,7 @@ import kotlin.math.ln
 
 /**
  * Hebrew text -> IPA, a Kotlin port of RenikudPlus (`renikud_onnx.G2P.phonemize`,
- * niqqud="strip", exact-MAP decode). Works on Unicode code points, like Python strings.
+ * niqqud="use" — points in the input are hard constraints; unpointed text decodes as with "strip" — exact-MAP decode). Works on Unicode code points, like Python strings.
  *
  * Tested against the Python package on the same sentences (tools/reference.py).
  */
@@ -36,12 +36,19 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
     private val wsC: Array<FloatArray>   // [C][2]
     private val wsV: Array<FloatArray>   // [V][2]
     private val forbidden: Array<BooleanArray> // [letter][C]
+    private val consonantIds: Map<String, Int>
+    private val vowelIds: Map<String, Int>
+
+    /** Labels a letter is allowed to take (null = no constraint), from niqqud in the input. */
+    data class Constraint(val cons: List<String>?, val vows: List<String>?)
 
     init {
         val meta = session.metadata.customMetadata
         vocab = JSONObject(meta.getValue("vocab")).let { o -> o.keys().asSequence().associateWith { o.getInt(it) } }
         consonantVocab = intKeyed(meta.getValue("consonant_vocab"))
         vowelVocab = intKeyed(meta.getValue("vowel_vocab"))
+        consonantIds = consonantVocab.entries.associate { (k, v) -> v to k }
+        vowelIds = vowelVocab.entries.associate { (k, v) -> v to k }
         clsId = meta.getValue("cls_token_id").toLong()
         sepId = meta.getValue("sep_token_id").toLong()
         letterConstraints = JSONObject(meta.getValue("letter_consonant_constraints")).let { o ->
@@ -67,18 +74,25 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
     }
 
     /** Unvocalized Hebrew -> IPA. Non-Hebrew characters pass through. */
-    fun phonemize(text: String, speaker: Int = 0, targetSpeaker: Int = 0): String {
+    fun phonemize(text: String, speaker: Int = 0, targetSpeaker: Int = 0, useNiqqud: Boolean = true): String {
         // Digits never appeared in the model's training text: read them as words first (as RenikudPlus does).
         val t = normalizeGraphemes(HebrewNumbers.normalize(text))
-        val normalized = stripNiqqud(Normalizer.normalize(t, Normalizer.Form.NFD))
-        val cps = codePoints(normalized)
+        val nfd = Normalizer.normalize(t, Normalizer.Form.NFD)
+        // niqqud="use": points the user wrote (e.g. הַיַּחַס) become hard constraints; unpointed text is unaffected.
+        val (cps, constraints) = if (useNiqqud) parseNiqqud(codePoints(nfd)) else codePoints(stripNiqqud(nfd)) to emptyMap()
         val windows = splitForDecode(cps, SAFE_CHUNK_CHARS)
         val sb = StringBuilder()
-        for (w in windows) sb.append(phonemizeWindow(w, speaker, targetSpeaker))
+        var offset = 0
+        for (w in windows) {
+            val local = constraints.filterKeys { it >= offset && it < offset + w.size }.mapKeys { it.key - offset }
+            sb.append(phonemizeWindow(w, speaker, targetSpeaker, local))
+            offset += w.size
+        }
         return sb.toString()
     }
 
-    private fun phonemizeWindow(cps: List<String>, speaker: Int, targetSpeaker: Int): String {
+    private fun phonemizeWindow(cps: List<String>, speaker: Int, targetSpeaker: Int,
+                                constraints: Map<Int, Constraint> = emptyMap()): String {
         // Tokenize: CLS, one id per code point, SEP. Offsets are code-point indices.
         val n = cps.size
         val unk = vocab["[UNK]"] ?: 0
@@ -117,7 +131,7 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
         val vowPred = IntArray(S)
         val stressed: Set<Int>
         if (supportsExactMap) {
-            stressed = exactMap(cps, consLogits, vowLogits, strLogits, consPred, vowPred)
+            stressed = exactMap(cps, consLogits, vowLogits, strLogits, consPred, vowPred, constraints)
         } else {
             for (t in 0 until S) { consPred[t] = argmax(consLogits[t]); vowPred[t] = argmax(vowLogits[t]) }
             stressed = greedyStress(cps, strLogits, vowPred)
@@ -155,7 +169,7 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
 
     /** Closed-form MAP over E(c, v, s) = log P(c) + log P(v | c) + log P(s | c, v). */
     private fun exactMap(cps: List<String>, consL: Array<FloatArray>, vowL: Array<FloatArray>, strL: Array<FloatArray>,
-                         consOut: IntArray, vowOut: IntArray): Set<Int> {
+                         consOut: IntArray, vowOut: IntArray, constraints: Map<Int, Constraint> = emptyMap()): Set<Int> {
         val S = consL.size
         val C = wvC.size
         val V = wvC[0].size
@@ -186,8 +200,21 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
                     e[c][v][1] = logc[c] + lv[v] + (l1 - lse)
                     if (forb != null && forb[c]) { e[c][v][0] = NEG; e[c][v][1] = NEG }
                 }
-                e[c][0][1] = NEG // stress needs a vowel
             }
+            // Niqqud constraints; dropped when they would leave no legal reading (as in Python).
+            val con = if (t in 1..cps.size) constraints[t - 1] else null
+            if (con != null) {
+                val saved = Array(C) { c -> Array(V) { v -> e[c][v].copyOf() } }
+                val keepC = con.cons?.mapNotNull { consonantIds[it] }?.toSet()
+                val keepV = con.vows?.mapNotNull { vowelIds[it] }?.toSet()
+                var mx = Float.NEGATIVE_INFINITY
+                for (c in 0 until C) for (v in 0 until V) for (k in 0..1) {
+                    if ((keepC != null && c !in keepC) || (keepV != null && v !in keepV)) e[c][v][k] = NEG
+                    mx = maxOf(mx, e[c][v][k])
+                }
+                if (mx < NEG / 2) for (c in 0 until C) for (v in 0 until V) saved[c][v].copyInto(e[c][v])
+            }
+            for (c in 0 until C) e[c][0][1] = NEG // stress needs a vowel
             var bu = Float.NEGATIVE_INFINITY; var au = 0
             var bs = Float.NEGATIVE_INFINITY; var aS = 0
             for (c in 0 until C) for (v in 0 until V) {
@@ -252,6 +279,80 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
             text.replace(Regex("[׳'`´]"), "'").replace(Regex("[״\"]"), "\"")
 
         fun stripNiqqud(text: String): String = NIQQUD_RE.replace(text, "")
+
+        private val POINT_VOWELS = mapOf(
+            "\u05B7" to listOf("a"), "\u05B2" to listOf("a"), "\u05B8" to listOf("a", "o"), "\u05C7" to listOf("o"),
+            "\u05B3" to listOf("o"), "\u05B6" to listOf("e"), "\u05B5" to listOf("e"), "\u05B1" to listOf("e"),
+            "\u05B4" to listOf("i"), "\u05B9" to listOf("o"), "\u05BA" to listOf("o"), "\u05BB" to listOf("u"),
+            "\u05B0" to listOf("∅", "e"),
+        )
+        private val DAGESH_HARD = mapOf("ב" to "b", "כ" to "k", "ך" to "k", "פ" to "p", "ף" to "p")
+        private val DAGESH_SOFT = mapOf("ב" to "v", "כ" to "χ", "ך" to "χ", "פ" to "f", "ף" to "f")
+        private const val DAGESH = "\u05BC"
+        private const val SHIN_DOT = "\u05C1"
+        private const val SIN_DOT = "\u05C2"
+
+        /** Port of `renikud_onnx.parse_niqqud`: (bare code points, index -> allowed labels). Input is NFD. */
+        fun parseNiqqud(text: List<String>): Pair<List<String>, Map<Int, Constraint>> {
+            class Rec(val idx: Int, val letter: String, val marks: MutableList<String> = ArrayList())
+            val bare = ArrayList<String>()
+            val letters = ArrayList<Rec>()
+            for (ch in text) {
+                if (NIQQUD_RE.matches(ch)) {
+                    if (letters.isNotEmpty() && letters.last().idx == bare.size - 1) letters.last().marks.add(ch)
+                    continue
+                }
+                if (isHebrew(ch)) letters.add(Rec(bare.size, ch))
+                bare.add(ch)
+            }
+            val wordOf = IntArray(bare.size)
+            var word = 0
+            for (i in bare.indices) { if (isSpace(bare[i])) word++; wordOf[i] = word }
+            val wordPointed = HashSet<Int>()
+            for (r in letters) if (r.marks.any { it in POINT_VOWELS }) wordPointed.add(wordOf[r.idx])
+
+            val cons = HashMap<Int, List<String>>(); val vows = HashMap<Int, List<String>>()
+            val mater = ArrayList<Pair<Int, String>>()
+            for ((ri, r) in letters.withIndex()) {
+                val signs = r.marks.filter { it in POINT_VOWELS }
+                val dagesh = DAGESH in r.marks
+                when {
+                    r.letter == "ש" -> { if (SHIN_DOT in r.marks) cons[r.idx] = listOf("ʃ") else if (SIN_DOT in r.marks) cons[r.idx] = listOf("s") }
+                    r.letter == "ה" && dagesh -> cons[r.idx] = listOf("h")
+                    r.letter in DAGESH_HARD -> {
+                        if (dagesh) cons[r.idx] = listOf(DAGESH_HARD.getValue(r.letter))
+                        else if (signs.isNotEmpty()) cons[r.idx] = listOf(DAGESH_SOFT.getValue(r.letter))
+                    }
+                }
+                if (r.letter == "ו" && signs.isEmpty() && dagesh) { mater.add(ri to "u"); continue }
+                if (r.letter == "ו" && signs.size == 1 && POINT_VOWELS.getValue(signs[0]) == listOf("o")) { mater.add(ri to "o"); continue }
+                if (signs.isNotEmpty()) {
+                    var allowed = POINT_VOWELS.getValue(signs[0]).toSet()
+                    for (sg in signs.drop(1)) allowed = allowed intersect POINT_VOWELS.getValue(sg).toSet()
+                    if (allowed.isNotEmpty()) vows[r.idx] = allowed.sorted()
+                }
+            }
+            for ((ri, r) in letters.withIndex()) {
+                if (r.marks.isNotEmpty() || wordOf[r.idx] !in wordPointed) continue
+                val prev = if (ri > 0) letters[ri - 1] else null
+                val nxt = letters.getOrNull(ri + 1)
+                val sameWord = nxt != null && wordOf[nxt.idx] == wordOf[r.idx]
+                if (r.letter == "ו") cons[r.idx] = listOf("v", "w")
+                else if (r.letter == "י" && prev != null && prev.idx == r.idx - 1 && (vows[prev.idx] == listOf("i") || vows[prev.idx] == listOf("e"))) {
+                    cons[r.idx] = listOf(NONE); vows[r.idx] = listOf(NONE)
+                } else if ((r.letter == "א" || r.letter == "ה") && !sameWord) cons[r.idx] = listOf(NONE)
+            }
+            for ((ri, q) in mater) {
+                val idx = letters[ri].idx
+                val prev = if (ri > 0) letters[ri - 1] else null
+                if (prev != null && prev.idx == idx - 1 && prev.idx !in vows) { vows[prev.idx] = listOf(q); vows[idx] = listOf(NONE) }
+                else vows[idx] = listOf(q)
+                cons[idx] = listOf(NONE)
+            }
+            val out = HashMap<Int, Constraint>()
+            for (i in cons.keys + vows.keys) out[i] = Constraint(cons[i], vows[i])
+            return bare to out
+        }
 
         fun codePoints(s: String): List<String> {
             val out = ArrayList<String>(s.length)

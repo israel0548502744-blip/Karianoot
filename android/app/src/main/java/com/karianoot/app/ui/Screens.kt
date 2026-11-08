@@ -327,10 +327,10 @@ private fun PronounceDialog(app: KarianootApp, close: () -> Unit) {
         title = { Text("תיקוני הגייה", color = C.Gold, fontWeight = FontWeight.Bold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("מילה שיוצאת לא נכון? כתבו אותה, ואיך היא צריכה להישמע (בכתיב \"כמו שזה נשמע\"). " +
+                Text("מילה שיוצאת לא נכון? כתבו אותה, ואיך היא צריכה להישמע: בכתיב \"כמו שזה נשמע\", או בניקוד (הכי מדויק). " +
                     "התיקון חל על כל הקריינויות, גם עם ו/ה/ב/ל/מ/ש/כ לפני המילה.", color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
                 Field(word, "המילה (למשל: היחס)") { word = it }
-                Field(say, "איך להגיד אותה (למשל: הַ-יַאחַס)") { say = it }
+                Field(say, "איך להגיד אותה (למשל: הַיַּחַס)") { say = it }
                 SoftButton("הוספה", Modifier.fillMaxWidth(), icon = Icons.Rounded.Add, enabled = word.isNotBlank() && say.isNotBlank(), color = C.Gold) {
                     app.pronounce.add(word, say); word = ""; say = ""
                 }

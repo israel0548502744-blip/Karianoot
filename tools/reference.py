@@ -56,6 +56,15 @@ NUMBER_SENTENCES = [  # numbers are read as words before the model (hebrew-num2w
 for s in SENTENCES + NUMBER_SENTENCES:
     g2p_out.append({"text": s, "ipa": g2p.phonemize(s)})
     print(s, "->", g2p_out[-1]["ipa"])
+POINTED = [  # niqqud the user writes is read as hard constraints (niqqud="use"); unpointed text is unaffected
+    "תסתכלו על הַיַּחַס, זה הימור טוב.",
+    "שָׂרָה קָנְתָה סֵפֶר, וְהַבַּיִת שֶׁלָּהּ יָפֶה.",
+    "הוא אָכַל, והיא אוֹכֶלֶת. ספר אחד, סִפֵּר שניים.",
+    "כּוֹל הַכָּבוֹד לַשּׁוֹפֵט, בְּרֶצְלוֹנָה נִצְּחָה.",
+]
+for s in POINTED:
+    g2p_out.append({"text": s, "ipa": g2p.phonemize(s, niqqud="use")})
+    print(s, "->", g2p_out[-1]["ipa"])
 json.dump(g2p_out, open(os.path.join(out, "g2p.json"), "w"), ensure_ascii=False, indent=1)
 
 # ---- Blue ---------------------------------------------------------------------
