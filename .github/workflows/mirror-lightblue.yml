@@ -1,0 +1,32 @@
+name: Mirror LightBlue for offline voice tests
+
+# notmax123/LightBlue (MIT): a Blue ONNX bundle with ~2,450 Hebrew speaker voices.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/mirror-lightblue.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q huggingface_hub
+      - name: Download
+        run: |
+          hf download notmax123/LightBlue --revision cafec196e16ded438434a1877247e82122885afe --local-dir m/lightblue --exclude "*.md" --exclude ".gitattributes" --exclude ".DS_Store"
+          rm -rf m/lightblue/.cache && du -sh m/lightblue && head -5 m/lightblue/voices/all_voices/manifest.tsv && cat m/lightblue/tts.json | head -c 600
+          cd m && tar czf ../lightblue_model.tgz --exclude "lightblue/voices" lightblue && tar czf ../lightblue_voices.tgz lightblue/voices && cd .. && ls -la *.tgz
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete lightblue-mirror -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create lightblue-mirror lightblue_model.tgz lightblue_voices.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "LightBlue mirror (for tools)" --notes "notmax123/LightBlue @cafec196 (MIT), for offline voice tests. Not the app."
