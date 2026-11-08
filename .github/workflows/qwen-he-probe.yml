@@ -1,0 +1,100 @@
+name: QwenTTS-he probe
+
+# notmax123/QwenTTS-he-1.7B (Apache-2.0 LoRA on Qwen/Qwen3-TTS-12Hz-1.7B-Base): does it sound more human than Blue?
+# Voice cloning from generic reference clips made here with Blue 2.5 (LibriTTS voices, CC BY). Not the app.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-he-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q sox libsox-dev > /dev/null
+      - run: |
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -q qwen-tts peft huggingface_hub soundfile "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+      - name: Licenses and model cards
+        run: |
+          python - <<'PY'
+          from huggingface_hub import HfApi, hf_hub_download
+          api = HfApi()
+          for r in ["Qwen/Qwen3-TTS-12Hz-1.7B-Base", "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "Qwen/Qwen3-TTS-Tokenizer-12Hz", "notmax123/QwenTTS-he-1.7B"]:
+              try:
+                  i = api.model_info(r, files_metadata=True)
+                  print("##", r, "license=", (i.card_data or {}).get("license"), "sha=", i.sha, "size=", sum((s.size or 0) for s in i.siblings))
+              except Exception as e:
+                  print("##", r, "ERROR", e)
+          for m in api.list_models(search="qwen3-tts", limit=30): print("  ", m.id)
+          for m in api.list_models(author="notmax123", limit=60): print("  notmax123:", m.id)
+          PY
+      - name: Reference clips (Blue 2.5) and IPA
+        run: |
+          hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          hf download notmax123/LightBlue voices/all_voices/male/spk_03977.json --revision cafec196e16ded438434a1877247e82122885afe --local-dir lb
+          hf download notmax123/QwenTTS-he-1.7B --include "samples/*" --local-dir qsamples
+          python - <<'PY'
+          import json, numpy as np, soundfile as sf
+          from blue_onnx import load_text_to_speech, load_voice_style, limit_peak
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx"); t = load_text_to_speech("blue25")
+          REF = "ערב טוב לכולם. היום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק על מה כדאי לשים."
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          for name, v in [("male2", "blue25/voices/libri_male_8088.json"), ("tet", "lb/voices/all_voices/male/spk_03977.json")]:
+              np.random.seed(0)
+              w, _ = t(fix(REF), lang="he", style=load_voice_style([v]), total_step=10, text_is_phonemes=True)
+              sf.write(f"ref_{name}.wav", limit_peak(w[0]), 44100)
+          TEXT = ["ערב טוב לכל האוהדים!", "הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה.", "תסתכלו על היחס, והיחס פה פשוט מטורף.",
+                  "אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות.", "מי שעוד לא הצטרף לקבוצה, זה הזמן.", "בהצלחה לכולם, ונתראה במשחק הבא!"]
+          json.dump({"ref_ipa": fix(REF), "sentences": [fix(s) for s in TEXT]}, open("ipa.json", "w"), ensure_ascii=False)
+          print(open("ipa.json").read())
+          PY
+      - name: Generate
+        run: |
+          mkdir -p out && cp ref_*.wav out/ && cp -r qsamples/samples out/hf_samples
+          python - <<'PY'
+          import json, time, torch, numpy as np, soundfile as sf
+          from peft import PeftModel
+          from qwen_tts import Qwen3TTSModel
+          torch.set_num_threads(4)
+          d = json.load(open("ipa.json"))
+          tts = Qwen3TTSModel.from_pretrained("Qwen/Qwen3-TTS-12Hz-1.7B-Base", device_map="cpu", dtype=torch.float32)
+          tts.model.talker = PeftModel.from_pretrained(tts.model.talker, "notmax123/QwenTTS-he-1.7B")
+          tts.model.eval()
+          for ref in ["male2", "tet"]:
+              for mode, xv in [("xvec", True), ("icl", False)]:
+                  parts, t0 = [], time.time()
+                  for i, s in enumerate(d["sentences"]):
+                      torch.manual_seed(i)
+                      kw = dict(text=s, language="Auto", ref_audio=f"ref_{ref}.wav", x_vector_only_mode=xv, non_streaming_mode=True,
+                                do_sample=False, subtalker_dosample=False, repetition_penalty=1.0, max_new_tokens=1024)
+                      if not xv: kw["ref_text"] = d["ref_ipa"]
+                      try:
+                          wavs, sr = tts.generate_voice_clone(**kw)
+                      except Exception as e:
+                          print("FAIL", ref, mode, i, repr(e)[:300], flush=True); break
+                      parts += [np.asarray(wavs[0], dtype=np.float32), np.zeros(int(0.18 * sr), np.float32)]
+                      print("GEN", ref, mode, i, f"{time.time() - t0:.0f}s", flush=True)
+                  if parts:
+                      sf.write(f"out/qwen_{ref}_{mode}.wav", np.concatenate(parts[:-1]), sr)
+                      print("DONE", ref, mode, f"{time.time() - t0:.0f}s total", flush=True)
+          PY
+          cd out && tar czf ../qwen_samples.tgz . && cd .. && ls -la qwen_samples.tgz
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f qwen_samples.tgz ] || exit 0
+          gh release delete qwen-he-samples -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-he-samples qwen_samples.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "QwenTTS-he probe (for tools)" --notes "QwenTTS-he-1.7B (Apache-2.0) Hebrew samples with generic voices, for comparison. Not the app."
