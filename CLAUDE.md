@@ -40,6 +40,14 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Offline quality loop: release `asr-mirror` (ivrit-ai whisper ct2) + `models-mirror`; scripts in the session scratchpad
   synthesize, transcribe and score (CER) settings. Whisper "corrects" words, so the user's ear decides close calls.
 
+## Research (Nov 8 2026)
+- LightBlue (notmax123, MIT): its own ONNX bundle is broken (no stats/vocab), but its ~2,456 LibriTTS voices (CC BY) work
+  on Blue 2.5. User liked male spk_03977 ("ט", distorts some words; blending 70/30 with libri_male_8088 helps).
+- QwenTTS-he-1.7B (Apache-2.0, LoRA on Qwen3-TTS) clones a voice from a clip; 0 word errors in ASR, livelier. Phone path:
+  notmax123/QwenTTS-he-1.7B-GGUF (Q4_K_M, 1.47 GB) on qwentts.cpp (MIT, C API, has a Termux build); CPU RTF ~2.9 on a
+  4-core CI runner (`qwen-cpp-probe.yml`). Input is stressed IPA (RenikudPlus).
+- Rejected: Chatterbox (bad Hebrew), Zonos-Hebrew / MamreTTS / robo_shaul (NC), voxtream2-he (GPL), Kokoro-he (NC data).
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).
