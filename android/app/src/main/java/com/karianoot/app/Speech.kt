@@ -49,7 +49,8 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                     ttsModel = key
                 }
                 val engine = tts!!
-                val v = BlueVoice.load(voice.customFile ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
+                val v = BlueVoice.load(voice.customFile ?: voice.asset?.let { assetFile(it) }
+                    ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
                 onStage("מקריא…", 0.02f)
                 val wav = engine.synthesize(Pronounce.apply(text, fixes()), v, opt) { p -> onStage("מקריא…", p) }
                 val name = "karianoot_${System.currentTimeMillis()}.wav"
@@ -61,6 +62,19 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 c
             }
         }
+
+    /** Copies a voice shipped in assets/ to a file (refreshed when the app is updated). */
+    private fun assetFile(path: String): File {
+        val f = File(ctx.filesDir, "builtin/" + path)
+        val stamp = File(f.path + ".v")
+        val ver = ctx.packageManager.getPackageInfo(ctx.packageName, 0).lastUpdateTime.toString()
+        if (!f.exists() || !stamp.exists() || stamp.readText() != ver) {
+            f.parentFile?.mkdirs()
+            ctx.assets.open(path).use { i -> f.outputStream().use { i.copyTo(it) } }
+            stamp.writeText(ver)
+        }
+        return f
+    }
 
     fun history(): List<Creation> = runCatching {
         val a = JSONArray(index.readText())

@@ -26,6 +26,10 @@ data class VoiceInfo(
     val customFile: java.io.File? = null,
     /** Made from a recording whose rights are unclear: fine for personal use, not for an app that is sold. */
     val personalOnly: Boolean = false,
+    /** A ready-made voice shipped inside the app (assets/), not in a model download. */
+    val asset: String? = null,
+    /** Every model this voice needs on the phone. */
+    val needs: List<String> = listOf(modelId),
 ) {
     /** Denoising steps for "fast / good / best". Blue V3 needs more (measured: 8 steps 5% errors, 16 steps 0.6%). */
     val steps: IntArray get() = if (modelId == "blue_v3") intArrayOf(12, 16, 24) else intArrayOf(5, 10, 16)
@@ -113,6 +117,9 @@ object Catalog {
         VoiceInfo("25_f6147", "blue_25", "voices/libri_female_6147.json", "נשי 3", "2.5", female = true),
         VoiceInfo("v3_roi", "blue_v3", "voices/Roi.json", "רועי", "גברי · V3", female = false),
         VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "נשי · V3", female = true),
+        // Made from the owner's ElevenLabs clips (tools/namer.py): personal use only, see assets/voices/README.md.
+        VoiceInfo("namer", "blue_25", "", "נמר", "שדרן", female = false, personalOnly = true,
+            asset = "voices/namer.json", needs = listOf("blue_25", "clone")),
     )
 
     fun model(id: String) = all.first { it.id == id }

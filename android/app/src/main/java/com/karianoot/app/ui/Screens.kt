@@ -172,7 +172,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var newVoice by remember { mutableStateOf(false) }
     var fixesOpen by remember { mutableStateOf(false) }
     val fixes by app.pronounce.list.collectAsState()
-    val ready = (Catalog.voices + custom).filter { states[it.modelId] == ModelState.Ready }
+    val ready = (Catalog.voices + custom).filter { v -> v.needs.all { states[it] == ModelState.Ready } }
     var voiceId by remember { mutableStateOf(Catalog.voices.first().id) }
     val voice = ready.firstOrNull { it.id == voiceId } ?: ready.firstOrNull()
     var speed by remember { mutableFloatStateOf(1.0f) }
@@ -227,6 +227,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 for (v in ready) VoiceChip(v, v.id == voice?.id) { voiceId = v.id }
                 NewVoiceChip(cloning) { newVoice = true }
             }
+            if (states["blue_25"] == ModelState.Ready && states["clone"] != ModelState.Ready)
+                Text("רוצים גם את \"נמר\" (שדרן כדורגל)? מורידים את \"ערכת קול מהקלטה\" במסך המודלים.", color = C.Faint, fontSize = 12.sp)
             if (voice?.personalOnly == true) Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.WarningAmber, null, tint = C.Amber, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -573,7 +575,7 @@ fun AboutScreen(app: KarianootApp) {
             Text("ONNX Runtime — Microsoft, רישיון MIT", color = C.Sub, fontSize = 13.sp)
             Text("גופן Rubik — רישיון SIL Open Font License", color = C.Sub, fontSize = 13.sp)
         }
-        val personal = custom.filter { it.personalOnly }
+        val personal = (Catalog.voices + custom).filter { it.personalOnly }
         if (personal.isNotEmpty()) Section(title = "⚠ קולות לשימוש אישי בלבד") {
             Text("הקולות האלה נוצרו מהקלטות שזכויות הקול בהן לא ברורות (למשל קול מ-ElevenLabs). " +
                 "מותר להשתמש בהם רק באופן אישי. אם האפליקציה תימכר, צריך למחוק אותם ולא לכלול אותם בה.",
