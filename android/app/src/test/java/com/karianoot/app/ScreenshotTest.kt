@@ -59,4 +59,16 @@ class ScreenshotTest {
     @Test fun library() = shot("4_library", Tab.Library)
 
     @Test fun about() = shot("5_about", Tab.About)
+
+    @Test fun libraryWithRecording() {
+        val dir = File(ctx.getExternalFilesDir(null), "creations").apply { mkdirs() }
+        com.karianoot.engine.Wav.write(File(dir, "demo.wav"), FloatArray(44100 * 3), 44100)
+        File(dir, "index.json").writeText(org.json.JSONArray().put(org.json.JSONObject()
+            .put("file", "demo.wav").put("text", "ערב טוב לכל האוהדים! תסתכלו על היחס, והיחס פה פשוט מטורף.")
+            .put("voice", "נמר").put("seconds", 3.0).put("at", 0L).put("gen", 4.2).put("vid", "namer")
+            .put("parts", org.json.JSONArray()
+                .put(org.json.JSONObject().put("t", "ערב טוב לכל האוהדים!").put("s", 0).put("e", 40000))
+                .put(org.json.JSONObject().put("t", "תסתכלו על היחס, והיחס פה פשוט מטורף.").put("s", 50000).put("e", 132300)))).toString())
+        shot("6_library_recording", Tab.Library)
+    }
 }
