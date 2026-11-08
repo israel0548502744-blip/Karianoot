@@ -32,7 +32,7 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Numbers: `HebrewNumbers.kt` is a port of `hebrew-num2words` (golden: `tools/numbers_golden.py` → test resources);
   `HebrewG2P.phonemize` runs it first, like RenikudPlus.
 - `BlueTts.Options.perSentence` (default on): each sentence is synthesized alone; fewer swallowed/mixed words.
-- `BlueTts.IPA_FIXES`: "היחס" → doubled y (the user picked it by ear). User fixes: `Pronounce.kt` + "תיקוני הגייה" dialog.
+- `BlueTts.IPA_FIXES`: "היחס" → doubled y, "ברצלונה" → baʁtselˈona (the user picked both by ear). User fixes: `Pronounce.kt` + "תיקוני הגייה" dialog.
 - Namer ("נמר"): `app/src/main/assets/voices/namer.json`, made from the user's ElevenLabs clips (the mp3s are NOT in
   git). Personal use only; needs Blue 2.5 + the clone kit (its z_ref duration predictor).
 - Offline quality loop: release `asr-mirror` (ivrit-ai whisper ct2) + `models-mirror`; scripts in the session scratchpad

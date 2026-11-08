@@ -19,4 +19,8 @@ class PronounceTest {
     @Test fun yachasGetsTheClearerSpelling() {
         assertEquals("tistaklˈu ʔˈal hajjˈaχas, vehajjˈaχas hajaχasˈim", BlueTts.fixIpa("tistaklˈu ʔˈal hajˈaχas, vehajˈaχas hajaχasˈim"))
     }
+
+    @Test fun barcelonaGetsItsVowel() {
+        assertEquals("lebaʁtselˈona", BlueTts.fixIpa("lebaʁtslˈona"))
+    }
 }

@@ -315,7 +315,10 @@ class BlueTts(
     override fun close() { dp.close(); dpRef?.close(); textEnc.close(); vectorEst.close(); vocoder.close() }
 
     companion object {
-        val IPA_FIXES = mapOf("hajˈaχas" to "hajjˈaχas")
+        val IPA_FIXES = mapOf(
+            "hajˈaχas" to "hajjˈaχas",       // היחס: doubled y (picked by ear)
+            "baʁtslˈona" to "baʁtselˈona",   // ברצלונה: בַּרְצֶלוֹנָה, the G2P drops the vowel after צ
+        )
 
         /**
          * Words the voices tend to blur, with a clearer spelling the user picked by ear.
