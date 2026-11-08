@@ -54,6 +54,8 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material.icons.rounded.RecordVoiceOver
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -124,7 +126,7 @@ fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, moti
                 Box(Modifier.weight(1f)) {
                     when (tab) {
                         Tab.Studio -> StudioScreen(app, sharedText, history) { tab = Tab.Models }
-                        Tab.Library -> LibraryScreen(speech, history)
+                        Tab.Library -> LibraryScreen(app, history)
                         Tab.Models -> ModelsScreen(app)
                         Tab.About -> AboutScreen(app)
                     }
@@ -267,7 +269,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause))
         }
 
-        last?.let { CreationCard(it, speech, highlight = true) { history.remove(it); speech.delete(it); app.clearResult() } }
+        last?.let { CreationCard(it, app, history, highlight = true) { history.remove(it); speech.delete(it); app.clearResult() } }
         Spacer(Modifier.height(20.dp))
     }
 }
@@ -429,8 +431,11 @@ fun Wave(modifier: Modifier, animate: Boolean, bars: Int = 5) {
 }
 
 @Composable
-fun CreationCard(c: Creation, speech: Speech, highlight: Boolean = false, onDelete: () -> Unit) {
+fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>, highlight: Boolean = false, onDelete: () -> Unit) {
     val ctx = LocalContext.current
+    val speech = app.speech
+    var showParts by remember(c.createdAt) { mutableStateOf(false) }
+    val redoing by app.redoing.collectAsState()
     var playing by remember(c) { mutableStateOf(false) }
     var pos by remember(c) { mutableFloatStateOf(0f) }
     var prepared by remember(c) { mutableStateOf(false) }
@@ -472,17 +477,44 @@ fun CreationCard(c: Creation, speech: Speech, highlight: Boolean = false, onDele
             Spacer(Modifier.weight(1f))
             CircleIcon(Icons.Rounded.Delete, "מחק", tint = C.Red, onClick = onDelete)
         }
+        if (c.parts.size > 1 && c.voiceId.isNotEmpty())
+            SoftButton(if (showParts) "סגירת תיקון משפטים" else "משפט יצא לא טוב? תיקון משפט", Modifier.fillMaxWidth(), icon = Icons.Rounded.Tune,
+                color = if (showParts) C.Gold else C.Text) { showParts = !showParts }
+        AnimatedVisibility(showParts) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("משפט יצא לא טוב? לחצו ↻ לידו, ורק הוא ייווצר מחדש.", color = C.Faint, fontSize = 12.sp)
+                c.parts.forEachIndexed { i, p ->
+                    val busyHere = redoing?.first == c.file && redoing?.second == i
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}. ${p.text}", color = C.Text, fontSize = 14.sp, maxLines = 2, modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        if (busyHere) Wave(Modifier.size(32.dp, 22.dp), animate = true)
+                        else CircleIcon(Icons.Rounded.Refresh, "ליצור מחדש", size = 40.dp) {
+                            if (playing) { player.pause(); playing = false }
+                            app.redoPart(c, i) { n ->
+                                if (n == null) Toast.makeText(ctx, "לא הצלחתי ליצור מחדש", Toast.LENGTH_SHORT).show()
+                                else {
+                                    val k = history.indexOfFirst { it.file == c.file }
+                                    if (k >= 0) history[k] = n
+                                    Toast.makeText(ctx, "משפט ${i + 1} נוצר מחדש ✨", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-fun LibraryScreen(speech: Speech, history: MutableList<Creation>) {
+fun LibraryScreen(app: KarianootApp, history: MutableList<Creation>) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Spacer(Modifier.height(10.dp))
         GoldText("ההקלטות שלי", 30.sp)
         Text("נשמרות 30 ההקלטות האחרונות.", color = C.Faint, fontSize = 13.sp)
         if (history.isEmpty()) Text("עוד אין הקלטות. כל קריינות שתיצרו תופיע כאן.", color = C.Sub, fontSize = 15.sp)
-        history.toList().forEachIndexed { i, c -> Box(Modifier.enter(i.coerceAtMost(8))) { CreationCard(c, speech) { history.remove(c); speech.delete(c) } } }
+        history.toList().forEachIndexed { i, c -> Box(Modifier.enter(i.coerceAtMost(8))) { CreationCard(c, app, history) { history.remove(c); app.speech.delete(c) } } }
         Spacer(Modifier.height(20.dp))
     }
 }

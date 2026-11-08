@@ -16,7 +16,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-data class Creation(val file: File, val text: String, val voice: String, val seconds: Float, val createdAt: Long, val genSeconds: Float)
+/** Where one sentence sits in a recording (samples), so it can be made again on its own. */
+data class PartSpan(val text: String, val start: Int, val end: Int)
+
+data class Creation(
+    val file: File, val text: String, val voice: String, val seconds: Float, val createdAt: Long, val genSeconds: Float,
+    val parts: List<PartSpan> = emptyList(), val voiceId: String = "", val steps: Int = 10, val speed: Float = 1f,
+)
 
 /**
  * Keeps one loaded voice engine at a time (each Blue bundle takes a few hundred MB of memory)
@@ -31,35 +37,76 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     val creationsDir = File(ctx.getExternalFilesDir(null), "creations").apply { mkdirs() }
     private val index = File(creationsDir, "index.json")
 
+    /** Loads (or reuses) the engine for [voice] and its style. Call under [lock]. */
+    private fun engineFor(voice: VoiceInfo, onStage: (String, Float) -> Unit): Pair<BlueTts, BlueVoice> {
+        if (g2p == null) {
+            onStage("טוען את מנוע ההגייה…", 0f)
+            g2p = HebrewG2P(File(models.dir(Catalog.g2p), "model_int8.onnx").path)
+        }
+        // Voices made from a recording take their duration from Blue 2.5's z_ref predictor.
+        val dpRef = File(models.dir(Catalog.clone), "duration_predictor.onnx").takeIf { voice.modelId == "blue_25" && it.length() == 2_151_232L }
+        val key = voice.modelId + (if (dpRef != null) "+ref" else "")
+        if (ttsModel != key) {
+            onStage("טוען את הקול…", 0f)
+            tts?.close(); tts = null; ttsModel = null
+            tts = BlueTts(models.dir(Catalog.model(voice.modelId)), g2p, dpRef)
+            ttsModel = key
+        }
+        val v = BlueVoice.load(voice.customFile ?: voice.asset?.let { assetFile(it) }
+            ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
+        return tts!! to v
+    }
+
     suspend fun speak(text: String, voice: VoiceInfo, opt: BlueTts.Options, onStage: (String, Float) -> Unit): Creation =
         withContext(Dispatchers.Default) {
             lock.withLock {
                 val t0 = System.nanoTime()
-                if (g2p == null) {
-                    onStage("טוען את מנוע ההגייה…", 0f)
-                    g2p = HebrewG2P(File(models.dir(Catalog.g2p), "model_int8.onnx").path)
-                }
-                // Voices made from a recording take their duration from Blue 2.5's z_ref predictor.
-                val dpRef = File(models.dir(Catalog.clone), "duration_predictor.onnx").takeIf { voice.modelId == "blue_25" && it.length() == 2_151_232L }
-                val key = voice.modelId + (if (dpRef != null) "+ref" else "")
-                if (ttsModel != key) {
-                    onStage("טוען את הקול…", 0f)
-                    tts?.close(); tts = null; ttsModel = null
-                    tts = BlueTts(models.dir(Catalog.model(voice.modelId)), g2p, dpRef)
-                    ttsModel = key
-                }
-                val engine = tts!!
-                val v = BlueVoice.load(voice.customFile ?: voice.asset?.let { assetFile(it) }
-                    ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
+                val (engine, v) = engineFor(voice, onStage)
                 onStage("מקריא…", 0.02f)
-                val wav = engine.synthesize(Pronounce.apply(text, fixes()), v, opt) { p -> onStage("מקריא…", p) }
-                val name = "karianoot_${System.currentTimeMillis()}.wav"
-                val f = File(creationsDir, name)
+                val parts = engine.synthesizeParts(Pronounce.apply(text, fixes()), v, opt) { p -> onStage("מקריא…", p) }
+                val wav = engine.join(parts.map { it.samples }, opt)
+                val gap = (opt.silence * engine.sampleRate).toInt()
+                var pos = 0
+                val spans = parts.mapIndexed { i, p ->
+                    if (i > 0) pos += gap
+                    PartSpan(p.text, pos, pos + p.samples.size).also { pos += p.samples.size }
+                }
+                val f = File(creationsDir, "karianoot_${System.currentTimeMillis()}.wav")
                 Wav.write(f, wav, engine.sampleRate)
                 val c = Creation(f, text, voice.name, wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
-                    ((System.nanoTime() - t0) / 1e9).toFloat())
+                    ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed)
                 save(listOf(c) + history())
                 c
+            }
+        }
+
+    /** Makes sentence [i] of [c] again (a new random take) and splices it into the recording. */
+    suspend fun redoPart(c: Creation, i: Int, voice: VoiceInfo): Creation =
+        withContext(Dispatchers.Default) {
+            lock.withLock {
+                val (engine, v) = engineFor(voice) { _, _ -> }
+                val span = c.parts[i]
+                val opt = BlueTts.Options(steps = c.steps, speed = c.speed, perSentence = false, peakLimit = null)
+                val fresh = Wav.limitPeak(engine.synthesizeParts(span.text, v, opt).flatMap { it.samples.asList() }.toFloatArray())
+                val (old, rate) = Wav.read(c.file)
+                val out = FloatArray(old.size - (span.end - span.start) + fresh.size)
+                old.copyInto(out, 0, 0, span.start)
+                fresh.copyInto(out, span.start)
+                old.copyInto(out, span.start + fresh.size, span.end, old.size)
+                val shift = fresh.size - (span.end - span.start)
+                val parts = c.parts.mapIndexed { j, p ->
+                    when {
+                        j < i -> p
+                        j == i -> p.copy(end = p.start + fresh.size)
+                        else -> p.copy(start = p.start + shift, end = p.end + shift)
+                    }
+                }
+                val f = File(creationsDir, "karianoot_${System.currentTimeMillis()}.wav")
+                Wav.write(f, out, rate)
+                val n = c.copy(file = f, parts = parts, seconds = out.size.toFloat() / rate)
+                save(history().map { if (it.file == c.file) n else it })
+                c.file.delete()
+                n
             }
         }
 
@@ -81,7 +128,10 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         (0 until a.length()).map { a.getJSONObject(it) }.mapNotNull { o ->
             val f = File(creationsDir, o.getString("file"))
             if (!f.exists()) null else Creation(f, o.getString("text"), o.getString("voice"),
-                o.getDouble("seconds").toFloat(), o.getLong("at"), o.optDouble("gen", 0.0).toFloat())
+                o.getDouble("seconds").toFloat(), o.getLong("at"), o.optDouble("gen", 0.0).toFloat(),
+                o.optJSONArray("parts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }
+                    .map { PartSpan(it.getString("t"), it.getInt("s"), it.getInt("e")) } } ?: emptyList(),
+                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat())
         }
     }.getOrDefault(emptyList())
 
@@ -93,7 +143,9 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         all.drop(KEEP).forEach { it.file.delete() }
         val a = JSONArray()
         for (c in list) a.put(JSONObject().put("file", c.file.name).put("text", c.text).put("voice", c.voice)
-            .put("seconds", c.seconds.toDouble()).put("at", c.createdAt).put("gen", c.genSeconds.toDouble()))
+            .put("seconds", c.seconds.toDouble()).put("at", c.createdAt).put("gen", c.genSeconds.toDouble())
+            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble())
+            .put("parts", JSONArray().also { pa -> c.parts.forEach { pa.put(JSONObject().put("t", it.text).put("s", it.start).put("e", it.end)) } }))
         index.writeText(a.toString())
     }
 

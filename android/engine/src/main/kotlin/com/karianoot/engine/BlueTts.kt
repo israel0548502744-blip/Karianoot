@@ -139,10 +139,32 @@ class BlueTts(
 
     /** Hebrew text -> audio samples (mono float, [sampleRate] Hz). */
     fun synthesize(text: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
-                   onProgress: (Float) -> Unit = {}): FloatArray {
-        val cleaned = stripEmoji(text)
-        val ipa = if (cleaned.any { it.code in 0x0590..0x05FF }) fixIpa(g2p!!.phonemize(cleaned)) else cleaned
-        return synthesizePhonemes(ipa, voice, opt, noise, onProgress)
+                   onProgress: (Float) -> Unit = {}): FloatArray =
+        join(synthesizeParts(text, voice, opt, noise, onProgress).map { it.samples }, opt)
+
+    /** One spoken piece of the text (a sentence, or a few short ones). */
+    class Part(val text: String, val samples: FloatArray)
+
+    /**
+     * The text split into sentences (see [Options.perSentence]), each spoken on its own. Kept apart so a single
+     * sentence that came out wrong can be made again without redoing the rest.
+     */
+    fun synthesizeParts(text: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
+                        onProgress: (Float) -> Unit = {}): List<Part> {
+        val pieces = chunkText(stripEmoji(text), if (opt.perSentence) 40 else 220)
+        return pieces.mapIndexed { i, piece ->
+            val ipa = if (piece.any { it.code in 0x0590..0x05FF }) fixIpa(g2p!!.phonemize(piece)) else piece
+            Part(piece, infer(ipa.replace(Regex("\\s+"), " ").trim(), voice, opt, noise).first).also { onProgress((i + 1f) / pieces.size) }
+        }
+    }
+
+    /** Parts -> one recording, with [Options.silence] between them and the peak limit. */
+    fun join(parts: List<FloatArray>, opt: Options): FloatArray {
+        val gap = (opt.silence * sampleRate).toInt()
+        val out = FloatArray(parts.sumOf { it.size } + gap * maxOf(0, parts.size - 1))
+        var p = 0
+        parts.forEachIndexed { i, a -> if (i > 0) p += gap; a.copyInto(out, p); p += a.size }
+        return opt.peakLimit?.let { Wav.limitPeak(out, it) } ?: out
     }
 
     fun synthesizePhonemes(ipa: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),

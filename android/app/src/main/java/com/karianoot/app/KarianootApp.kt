@@ -70,5 +70,20 @@ class KarianootApp : Application() {
         }
     }
 
+    /** Re-making one sentence of a recording: (file, sentence index) while it runs. */
+    val redoing = MutableStateFlow<Pair<java.io.File, Int>?>(null)
+
+    fun redoPart(c: Creation, i: Int, done: (Creation?) -> Unit) {
+        if (redoing.value != null || _job.value.busy) return
+        val voice = (Catalog.voices + voices.custom.value).firstOrNull { it.id == c.voiceId } ?: return done(null)
+        redoing.value = c.file to i
+        scope.launch {
+            val r = runCatching { speech.redoPart(c, i, voice) }.getOrNull()
+            if (r != null && _job.value.result?.file == c.file) _job.value = _job.value.copy(result = r)
+            redoing.value = null
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(r) }
+        }
+    }
+
     fun clearResult() { if (!_job.value.busy) _job.value = JobState() }
 }

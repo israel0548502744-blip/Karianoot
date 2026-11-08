@@ -20,6 +20,22 @@ object Wav {
         RandomAccessFile(file, "rw").use { f -> f.setLength(0); f.write(h.array()); f.write(data.array()) }
     }
 
+    /** Reads a mono 16-bit PCM WAV written by [write] -> (samples, sample rate). */
+    fun read(file: File): Pair<FloatArray, Int> {
+        val b = ByteBuffer.wrap(file.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+        val rate = b.getInt(24)
+        var pos = 12
+        while (pos + 8 <= b.limit()) {
+            val id = String(ByteArray(4) { b.get(pos + it) }); val len = b.getInt(pos + 4)
+            if (id == "data") {
+                val n = minOf(len, b.limit() - pos - 8) / 2
+                return FloatArray(n) { b.getShort(pos + 8 + it * 2) / 32767f } to rate
+            }
+            pos += 8 + len + (len and 1)
+        }
+        return FloatArray(0) to rate
+    }
+
     /** Scale down so the peak is at most [limit]; quieter audio is left alone (blue_onnx.limit_peak). */
     fun limitPeak(a: FloatArray, limit: Float = 0.95f): FloatArray {
         var peak = 0f
