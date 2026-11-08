@@ -22,12 +22,9 @@ jobs:
           from huggingface_hub import HfApi
           api = HfApi()
           repos = [
-              "notmax123/BlueTTS2.5-onnx", "notmax123/blue-onnx-v2", "notmax123/BlueV3-onnx",
-              "notmax123/RenikudPlus", "renikud/renikud",
-              "thewh1teagle/phonikud-onnx", "thewh1teagle/piper-onnx-noa",
-              "ResembleAI/chatterbox", "k2-fsa/OmniVoice",
-              "notmax123/LightBlue", "notmax123/Zonos-Hebrew", "notmax123/MamreTTS", "notmax123/QwenTTS-he-1.7B",
-              "onnx-community/chatterbox-multilingual-ONNX", "flowty1/voxtream2-he", "notmax123/BlueV3",
+              "notmax123/QwenTTS-he-1.7B-GGUF", "notmax123/magpie_tts_multilingual_357m-he", "notmax123/Fish-Audio-S2-Pro-He",
+              "notmax123/bluev2-onnx-int8", "notmax123/robo_shaul", "notmax123/blue-v2", "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+              "nvidia/magpie_tts_multilingual_357m", "Serveurperso/Qwen3-TTS-GGUF",
           ]
           for r in repos:
               try:
@@ -45,7 +42,7 @@ jobs:
           python - <<'PY' | tee -a probe.txt
           from huggingface_hub import HfApi
           api = HfApi()
-          for q in ["notmax123", "hebrew tts", "hebrew emotion", "zonos hebrew", "chatterbox hebrew"]:
+          for q in ["qwen3-tts gguf", "qwentts", "magpie hebrew"]:
               print(f"## search: {q}")
               for m in api.list_models(search=q, limit=40):
                   print("  ", m.id)
@@ -55,10 +52,9 @@ jobs:
         run: |
           python - <<'PY' | tee -a probe.txt
           from huggingface_hub import hf_hub_download
-          for repo, f in [("notmax123/LightBlue", "README.md"), ("notmax123/Zonos-Hebrew", "README.md"),
-                          ("notmax123/MamreTTS", "README.md"), ("notmax123/QwenTTS-he-1.7B", "README.md"),
-                          ("onnx-community/chatterbox-multilingual-ONNX", "README.md"), ("flowty1/voxtream2-he", "README.md"),
-                          ("notmax123/BlueV3", "README.md")]:
+          for repo, f in [("notmax123/QwenTTS-he-1.7B-GGUF", "README.md"), ("notmax123/magpie_tts_multilingual_357m-he", "README.md"),
+                          ("notmax123/Fish-Audio-S2-Pro-He", "README.md"), ("notmax123/robo_shaul", "README.md"),
+                          ("nvidia/magpie_tts_multilingual_357m", "README.md")]:
               try:
                   print(f"===== {repo}/{f}\n" + open(hf_hub_download(repo, f)).read())
               except Exception as e:
