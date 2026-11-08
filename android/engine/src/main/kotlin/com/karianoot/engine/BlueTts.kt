@@ -79,6 +79,11 @@ class BlueTts(
         /** Seconds of silence between sentences. */
         val silence: Float = 0.0f,
         val peakLimit: Float? = 0.95f,
+        /**
+         * Speak each sentence on its own (short ones are joined). In listening tests this removed the
+         * swallowed and mixed-up words of long passages; the pause between them is [silence].
+         */
+        val perSentence: Boolean = true,
     )
 
     fun interface Noise { fun sample(shape: IntArray): FloatArray }
@@ -142,7 +147,7 @@ class BlueTts(
 
     fun synthesizePhonemes(ipa: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
                            onProgress: (Float) -> Unit = {}): FloatArray {
-        val chunks = chunkText(ipa.replace(Regex("\\s+"), " ").trim(), 300)
+        val chunks = chunkText(ipa.replace(Regex("\\s+"), " ").trim(), if (opt.perSentence) 40 else 300)
         val parts = ArrayList<FloatArray>()
         chunks.forEachIndexed { i, c ->
             if (i > 0 && opt.silence > 0f) parts.add(FloatArray((opt.silence * sampleRate).toInt()))

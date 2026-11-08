@@ -68,7 +68,8 @@ class HebrewG2P(modelPath: String, env: OrtEnvironment = OrtEnvironment.getEnvir
 
     /** Unvocalized Hebrew -> IPA. Non-Hebrew characters pass through. */
     fun phonemize(text: String, speaker: Int = 0, targetSpeaker: Int = 0): String {
-        val t = normalizeGraphemes(text)
+        // Digits never appeared in the model's training text: read them as words first (as RenikudPlus does).
+        val t = normalizeGraphemes(HebrewNumbers.normalize(text))
         val normalized = stripNiqqud(Normalizer.normalize(t, Normalizer.Form.NFD))
         val cps = codePoints(normalized)
         val windows = splitForDecode(cps, SAFE_CHUNK_CHARS)

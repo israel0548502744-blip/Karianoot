@@ -49,7 +49,11 @@ from renikud_onnx import G2P
 
 g2p = G2P(os.path.join(models, "renikud/model_int8.onnx"))
 g2p_out = []
-for s in SENTENCES:
+NUMBER_SENTENCES = [  # numbers are read as words before the model (hebrew-num2words)
+    "היחס הוא 2.5, ואם ריאל מנצחת 3-1 זה כבר 7.20.",
+    "המשחק מתחיל בשעה 21:45, ויש 70% סיכוי לשני שערים לפחות.",
+]
+for s in SENTENCES + NUMBER_SENTENCES:
     g2p_out.append({"text": s, "ipa": g2p.phonemize(s)})
     print(s, "->", g2p_out[-1]["ipa"])
 json.dump(g2p_out, open(os.path.join(out, "g2p.json"), "w"), ensure_ascii=False, indent=1)
