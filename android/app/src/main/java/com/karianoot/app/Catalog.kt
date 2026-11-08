@@ -30,6 +30,8 @@ data class VoiceInfo(
     val asset: String? = null,
     /** Every model this voice needs on the phone. */
     val needs: List<String> = listOf(modelId),
+    /** Default liveliness (start-noise scale, [com.karianoot.engine.BlueTts.Options.temperature]). */
+    val liveliness: Float = 1.0f,
 ) {
     /** Denoising steps for "fast / good / best". Blue V3 needs more (measured: 8 steps 5% errors, 16 steps 0.6%). */
     val steps: IntArray get() = if (modelId == "blue_v3") intArrayOf(12, 16, 24) else intArrayOf(5, 10, 16)
@@ -119,7 +121,7 @@ object Catalog {
         VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "נשי · V3", female = true),
         // Made from the owner's ElevenLabs clips (tools/namer.py): personal use only, see assets/voices/README.md.
         VoiceInfo("namer", "blue_25", "", "נמר", "שדרן", female = false, personalOnly = true,
-            asset = "voices/namer.json", needs = listOf("blue_25", "clone")),
+            asset = "voices/namer.json", needs = listOf("blue_25", "clone"), liveliness = 1.2f),
     )
 
     fun model(id: String) = all.first { it.id == id }

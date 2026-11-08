@@ -22,6 +22,7 @@ data class PartSpan(val text: String, val start: Int, val end: Int)
 data class Creation(
     val file: File, val text: String, val voice: String, val seconds: Float, val createdAt: Long, val genSeconds: Float,
     val parts: List<PartSpan> = emptyList(), val voiceId: String = "", val steps: Int = 10, val speed: Float = 1f,
+    val temperature: Float = 1f,
 )
 
 /**
@@ -74,7 +75,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val f = File(creationsDir, "karianoot_${System.currentTimeMillis()}.wav")
                 Wav.write(f, wav, engine.sampleRate)
                 val c = Creation(f, text, voice.name, wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
-                    ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed)
+                    ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed, opt.temperature)
                 save(listOf(c) + history())
                 c
             }
@@ -86,7 +87,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             lock.withLock {
                 val (engine, v) = engineFor(voice) { _, _ -> }
                 val span = c.parts[i]
-                val opt = BlueTts.Options(steps = c.steps, speed = c.speed, perSentence = false, peakLimit = null)
+                val opt = BlueTts.Options(steps = c.steps, speed = c.speed, perSentence = false, peakLimit = null, temperature = c.temperature)
                 val fresh = Wav.limitPeak(engine.synthesizeParts(span.text, v, opt).flatMap { it.samples.asList() }.toFloatArray())
                 val (old, rate) = Wav.read(c.file)
                 val out = FloatArray(old.size - (span.end - span.start) + fresh.size)
@@ -131,7 +132,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 o.getDouble("seconds").toFloat(), o.getLong("at"), o.optDouble("gen", 0.0).toFloat(),
                 o.optJSONArray("parts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }
                     .map { PartSpan(it.getString("t"), it.getInt("s"), it.getInt("e")) } } ?: emptyList(),
-                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat())
+                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat(), o.optDouble("temp", 1.0).toFloat())
         }
     }.getOrDefault(emptyList())
 
@@ -144,7 +145,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         val a = JSONArray()
         for (c in list) a.put(JSONObject().put("file", c.file.name).put("text", c.text).put("voice", c.voice)
             .put("seconds", c.seconds.toDouble()).put("at", c.createdAt).put("gen", c.genSeconds.toDouble())
-            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble())
+            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble()).put("temp", c.temperature.toDouble())
             .put("parts", JSONArray().also { pa -> c.parts.forEach { pa.put(JSONObject().put("t", it.text).put("s", it.start).put("e", it.end)) } }))
         index.writeText(a.toString())
     }

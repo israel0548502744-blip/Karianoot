@@ -84,6 +84,11 @@ class BlueTts(
          * swallowed and mixed-up words of long passages; the pause between them is [silence].
          */
         val perSentence: Boolean = true,
+        /**
+         * Liveliness: scales the starting noise of the flow. 1.0 = the model's own; the user picked 1.2 by ear
+         * as less robotic (more pitch movement, same word accuracy in tests).
+         */
+        val temperature: Float = 1.0f,
     )
 
     fun interface Noise { fun sample(shape: IntArray): FloatArray }
@@ -220,7 +225,7 @@ class BlueTts(
             val latentDim = ldim * compress
             val mask = FloatArray(latentLen) { if (it < maskLen) 1f else 0f }
             var xt = noise.sample(intArrayOf(1, latentDim, latentLen))
-            for (ch in 0 until latentDim) for (t in 0 until latentLen) xt[ch * latentLen + t] *= mask[t]
+            for (ch in 0 until latentDim) for (t in 0 until latentLen) xt[ch * latentLen + t] *= mask[t] * opt.temperature
             val latentMask = f(mask, 1, 1, latentLen)
             val totalStep = f(floatArrayOf(opt.steps.toFloat()), 1)
 

@@ -88,6 +88,21 @@ class GoldenTest {
         println("CHECK blue worst maxdiff=$worst")
     }
 
+    @Test fun livelinessScalesTheStartNoise() {
+        need()
+        BlueTts(File(models, "blue_25"), null).use { tts ->
+            val voice = BlueVoice.load(File(models, "blue_25/voices/female.json"))
+            val ipa = "ʃalˈom lekulˈam."
+            val r = java.util.Random(5)
+            val base = FloatArray(200_000) { r.nextGaussian().toFloat() }
+            val a = tts.infer(ipa, voice, BlueTts.Options(steps = 5, temperature = 1.2f), BlueTts.Noise { sh -> base.copyOf(sh.fold(1) { x, y -> x * y }) }).first
+            val b = tts.infer(ipa, voice, BlueTts.Options(steps = 5), BlueTts.Noise { sh -> FloatArray(sh.fold(1) { x, y -> x * y }) { base[it] * 1.2f } }).first
+            var md = 0.0; for (i in a.indices) md = maxOf(md, abs(a[i] - b[i]).toDouble())
+            println("CHECK liveliness maxdiff=$md")
+            assertEquals(a.size, b.size); assertTrue(md < 1e-4)
+        }
+    }
+
     @Test fun fullPipelineWritesWav() {
         need()
         val g2p = HebrewG2P(File(models, "renikud/model_int8.onnx").path)

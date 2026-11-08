@@ -177,6 +177,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val ready = (Catalog.voices + custom).filter { v -> v.needs.all { states[it] == ModelState.Ready } }
     var voiceId by remember { mutableStateOf(Catalog.voices.first().id) }
     val voice = ready.firstOrNull { it.id == voiceId } ?: ready.firstOrNull()
+    var alive by remember(voice?.id) { mutableFloatStateOf(voice?.liveliness ?: 1f) }
     var speed by remember { mutableFloatStateOf(1.0f) }
     var quality by remember { mutableStateOf(1) } // 0 fast, 1 good, 2 best
     var pause by remember { mutableFloatStateOf(0.15f) }
@@ -241,6 +242,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         Section(Modifier.enter(4), title = "כיוונון") {
             LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
             LabeledSlider("הפסקה בין משפטים", "%.2f שנ׳".format(pause), pause, 0f..0.8f) { pause = it }
+            LabeledSlider("חיות (פחות רובוטי)", "%.1f".format(alive), alive, 0.8f..1.5f) { alive = it }
             Text("איכות", color = C.Sub, fontSize = 14.sp)
             Segmented(listOf("מהיר", "איכותי", "מקסימום"), quality) { quality = it }
             SoftButton(if (fixes.isEmpty()) "תיקוני הגייה" else "תיקוני הגייה (${fixes.size})", Modifier.fillMaxWidth(),
@@ -266,7 +268,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         GoldButton(if (busy) "מקריא…" else "צור קריינות", Modifier.fillMaxWidth().enter(5), icon = Icons.Rounded.AutoAwesome,
             enabled = !busy && g2pReady && voice != null && text.isNotBlank()) {
             val v = voice ?: return@GoldButton
-            app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause))
+            app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive))
         }
 
         last?.let { CreationCard(it, app, history, highlight = true) { history.remove(it); speech.delete(it); app.clearResult() } }
