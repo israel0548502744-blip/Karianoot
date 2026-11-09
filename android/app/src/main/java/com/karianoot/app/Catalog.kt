@@ -111,7 +111,7 @@ object Catalog {
         repo = "notmax123/QwenTTS-he-1.7B-GGUF", revision = "2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9",
         license = "Apache-2.0",
         credit = "QwenTTS-he — Max Melichov (notmax123); Qwen3-TTS — Alibaba Qwen; qwentts.cpp (MIT); " +
-            "voices from LibriTTS speakers (CC BY 4.0) via Blue 2.5 and LightBlue (MIT)",
+            "voices from LibriTTS speakers (CC BY 4.0) via Blue 2.5 and LightBlue (MIT); designed voices made with VoxCPM2 (Apache-2.0)",
         files = listOf(
             ModelFile("qwen-talker-1.7b-base-Q4_K_M.gguf", 1_219_245_248),
             ModelFile("qwen-tokenizer-12hz-Q4_K_M.gguf", 254_974_752),
@@ -134,6 +134,11 @@ object Catalog {
             asset = "qwen/q_$id.spk", needs = listOf("g2p", "qwen_he"))
 
     val voices = listOf(
+        // Designed from a text description with VoxCPM2 (Apache-2.0): synthetic voices, no real person behind them.
+        q("d_commentator", "שדרן", "מעוצב", female = false),
+        q("d_radio", "קריין רדיו", "מעוצב", female = false),
+        q("d_stadium", "כרוז", "מעוצב", female = false),
+        q("d_woman", "מגישה", "מעוצב", female = true),
         q("male2", "גברי 2", "", female = false),
         q("tet", "גברי ט", "", female = false),
         q("het", "גברי ח", "", female = false),

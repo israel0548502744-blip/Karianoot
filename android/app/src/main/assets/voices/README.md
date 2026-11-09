@@ -9,3 +9,5 @@ distributed. It is flagged `personalOnly` in `Catalog.kt` and listed as such in 
 Speaker embeddings for QwenTTS-he (2048 float32 each), made in `.github/workflows/qwen-voices.yml` from reference clips
 synthesized with Blue 2.5 / LightBlue LibriTTS voices (CC BY 4.0). `q_namer.spk` comes from the Blue Namer voice above:
 **personal use only**, same as `namer.json`.
+`q_d_*.spk` ("שדרן", "קריין רדיו", "כרוז", "מגישה"): voices designed from a text description with VoxCPM2 (Apache-2.0) in
+`.github/workflows/voice-design.yml`; synthetic, no real person, fine for commercial use.
