@@ -304,11 +304,11 @@ private fun VoiceChip(v: VoiceInfo, selected: Boolean, onClick: () -> Unit) {
     ) {
         Box(Modifier.size(44.dp).clip(CircleShape).background(if (selected) C.GoldButton else Brush.linearGradient(listOf(Color(0x33FFF4DC), Color(0x11FFF4DC)))),
             contentAlignment = Alignment.Center) {
-            Text(v.name.take(1), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(v.name.split(" ").last().take(2), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
         Spacer(Modifier.height(6.dp))
         Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        Text(if (v.personalOnly) "⚠ אישי" else v.note, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
+        Text(if (v.personalOnly) "⚠ אישי" else v.note.ifEmpty { if (v.female) "אישה" else "גבר" }, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
     }
 }
 

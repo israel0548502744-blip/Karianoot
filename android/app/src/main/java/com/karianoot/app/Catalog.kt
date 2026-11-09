@@ -132,13 +132,13 @@ object Catalog {
             asset = "qwen/q_$id.spk", needs = listOf("g2p", "qwen_he"))
 
     val voices = listOf(
-        q("male2", "גברי 2", "Qwen", female = false),
-        q("tet", "גברי ט", "Qwen", female = false),
-        q("het", "גברי ח", "Qwen", female = false),
-        q("male1", "גברי 1", "Qwen", female = false),
-        q("female", "נשי", "Qwen", female = true),
-        q("gimel", "נשי ג", "Qwen", female = true),
-        q("namer", "נמר", "שדרן · Qwen", female = false, personal = true),
+        q("male2", "גברי 2", "", female = false),
+        q("tet", "גברי ט", "", female = false),
+        q("het", "גברי ח", "", female = false),
+        q("male1", "גברי 1", "", female = false),
+        q("female", "נשי", "", female = true),
+        q("gimel", "נשי ג", "", female = true),
+        q("namer", "נמר", "שדרן", female = false, personal = true),
         VoiceInfo("25_female", "blue_25", "voices/female.json", "נשי", "2.5", female = true),
         VoiceInfo("25_m6209", "blue_25", "voices/libri_male_6209.json", "גברי 1", "2.5", female = false),
         VoiceInfo("25_m8088", "blue_25", "voices/libri_male_8088.json", "גברי 2", "2.5", female = false),
