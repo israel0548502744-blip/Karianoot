@@ -127,12 +127,14 @@ object Joiner {
 
     /**
      * Joins [parts] (the pieces of [texts]). [pause] > 0: every sentence pause is that many seconds; otherwise the
-     * voice's own pause, or [fallback] when the text has no sentence break to measure it on.
+     * voice's own pause, or [fallback] when the text has no sentence break to measure it on, but never shorter than
+     * [floor] (Blue's own 0.1 s sounded rushed: the user preferred the old 0.2 s between pieces).
      */
     fun join(parts: List<FloatArray>, texts: List<String>, rate: Int, pause: Float = 0f, fallback: Float = 0.15f,
-             peakLimit: Float? = 0.95f): Result {
+             peakLimit: Float? = 0.95f, floor: Float = 0f): Result {
         val pieces = parts.mapIndexed { i, w -> analyse(w, texts.getOrElse(i) { "" }, rate) }
-        val sec = (if (pause > 0f) pause else naturalPause(pieces, rate) ?: fallback).coerceAtLeast(MIN_PAUSE)
+        val natural = max(naturalPause(pieces, rate) ?: fallback, floor)
+        val sec = (if (pause > 0f) pause else natural).coerceAtLeast(MIN_PAUSE)
         val gapSamples = (sec * rate).roundToInt()
         val levels = pieces.map { it.level }.filter { it > 0 }.sorted()
         val target = if (levels.isEmpty()) 0.0 else levels[levels.size / 2]

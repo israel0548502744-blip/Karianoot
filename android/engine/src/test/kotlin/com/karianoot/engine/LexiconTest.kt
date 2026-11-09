@@ -26,6 +26,13 @@ class LexiconTest {
         // Ordinary Hebrew words that look like names are not in the lexicon (קומו = "get up", לאנס).
         assertEquals("קומו והצטרפו", Lexicon.apply("קומו והצטרפו"))
         assertEquals("הוא בודה סיפורים", Lexicon.apply("הוא בודה סיפורים"))
+        // Prefixed forms of keys that are other words: מליון (million), השתיקו (silenced), וואן (one).
+        assertEquals("מליון שקל", Lexicon.apply("מליון שקל"))
+        assertEquals("במליון", Lexicon.apply("במליון"))
+        assertEquals("השתיקו את הקהל", Lexicon.apply("השתיקו את הקהל"))
+        assertEquals("נאמבר וואן", Lexicon.apply("נאמבר וואן"))
+        assertEquals("lelijˈon", Lexicon.apply("לליון"))
+        assertEquals("betˈeku", Lexicon.apply("בתיקו"))
     }
 
     @Test fun prefixSounds() {

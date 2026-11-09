@@ -59,6 +59,14 @@ class JoinerTest {
         assertEquals(0.5f, Joiner.join(listOf(b, b), listOf(tb, tb), rate, fallback = 0.5f).pauseSeconds, 1e-6f)
     }
 
+    @Test fun floorLengthensShortNaturalPauses() {
+        // The voice's own pause is 0.30 s; a floor of 0.4 s wins, a floor of 0.2 s changes nothing.
+        assertEquals(0.4f, Joiner.join(listOf(a, b), listOf(ta, tb), rate, fallback = 0.5f, floor = 0.4f).pauseSeconds, 1e-6f)
+        assertEquals(0.30f, Joiner.join(listOf(a, b), listOf(ta, tb), rate, fallback = 0.5f, floor = 0.2f).pauseSeconds, 0.011f)
+        // A chosen pause is kept as it is.
+        assertEquals(0.15f, Joiner.join(listOf(a, b), listOf(ta, tb), rate, pause = 0.15f, floor = 0.4f).pauseSeconds, 1e-6f)
+    }
+
     @Test fun onsetIsNotClipped() {
         val r = Joiner.join(listOf(b, b), listOf(tb, tb), rate, pause = 0.2f, peakLimit = null)
         val s = r.spans[1][0]

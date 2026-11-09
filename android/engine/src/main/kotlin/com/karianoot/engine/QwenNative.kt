@@ -101,6 +101,9 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
         /** Qwen's own pause at a sentence end (~0.4 s measured), when a text has none to measure. */
         const val NATURAL_PAUSE = 0.4f
 
+        /** The shortest "natural" sentence pause (Qwen's own are 0.3-0.45 s, so this rarely changes anything). */
+        const val MIN_PAUSE = 0.3f
+
         /**
          * Frame budget for a piece: speech runs ~13 IPA characters per second and Qwen makes 12.5 frames per
          * second, so about 1 frame per character; twice that plus 3 seconds is generous but bounded.

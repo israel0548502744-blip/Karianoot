@@ -166,7 +166,7 @@ class BlueTts(
 
     /** Parts -> one recording ([Joiner]: even sentence pauses, [Options.silence] or the voice's own, and the peak limit). */
     fun join(parts: List<Part>, opt: Options): FloatArray =
-        Joiner.join(parts.map { it.samples }, parts.map { it.text }, sampleRate, opt.silence, NATURAL_PAUSE, opt.peakLimit).samples
+        Joiner.join(parts.map { it.samples }, parts.map { it.text }, sampleRate, opt.silence, NATURAL_PAUSE, opt.peakLimit, MIN_PAUSE).samples
 
     fun synthesizePhonemes(ipa: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
                            onProgress: (Float) -> Unit = {}): FloatArray {
@@ -325,6 +325,12 @@ class BlueTts(
 
         /** Blue's own pause at a sentence end (~0.1 s measured inside pieces), when a text has none to measure. */
         const val NATURAL_PAUSE = 0.1f
+
+        /**
+         * The shortest "natural" sentence pause for Blue. Its own 0.1 s sounds rushed: in the joins round the user
+         * picked the old joins (0.2 s between pieces) over every sentence at 0.1 s.
+         */
+        const val MIN_PAUSE = 0.2f
 
         /** 25 ms fade in/out so joined pieces don't click (as the original LightBlue code did). */
         fun fadeEdges(w: FloatArray, rate: Int, ms: Int = 25): FloatArray {

@@ -96,7 +96,17 @@ object Lexicon {
         "מק אליסטר" to "mˈak ʔˈalisteʁ",
     )
 
+    /**
+     * Ordinary Hebrew words that look like a prefix + a name above, e.g. "מליון" (million, not "from Lyon"),
+     * "השתיקו" (silenced, not ה+ש+תיקו), "וואן" (one). Left alone, also with prefixes of their own ("במליון").
+     * Found with Hebrew word frequencies of every prefixed form of every key.
+     */
+    val PROTECT: Set<String> = setOf(
+        "מליון", "בליון", "כליון", "השתיקו", "וואן", "שביו", "שלביו", "משביו", "כלביו", "שוביו",
+    )
+
     private const val HEB = "\\u05D0-\\u05EA"
+    private const val PREFIX_LETTERS = "ובלמהכש"
     private val SINGLE = mapOf('ו' to "ve", 'ב' to "be", 'ל' to "le", 'מ' to "me", 'ה' to "ha", 'כ' to "ke", 'ש' to "ʃe")
     // After ו the next prefix letter loses its dagesh: וּבְ = uve, וּכְ = uχe.
     private val SOFT = mapOf('ב' to "ve", 'כ' to "χe")
@@ -113,14 +123,20 @@ object Lexicon {
         }
     }
 
+    // The prefix is matched lazily, so a whole-word key ("בואן") wins over a prefix + a shorter key (ב + "ואן").
     private val PATTERN = Regex(
-        "(?<![$HEB'])([ובלמהכש]{0,2})-?(" + WORDS.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
+        "(?<![$HEB'])([$PREFIX_LETTERS]{0,2}?)-?(" + WORDS.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
             ")(?![$HEB'])"
     )
+
+    /** [token] is a protected word, maybe behind one or two prefix letters of its own. */
+    private fun isProtected(token: String) =
+        (0..2).any { k -> token.length > k && token.take(k).all { it in PREFIX_LETTERS } && token.drop(k) in PROTECT }
 
     fun apply(text: String): String {
         val t = text.replace('׳', '\'')
         return PATTERN.replace(t) { m ->
+            if (isProtected(m.value)) return@replace m.value
             val pre = prefix(m.groupValues[1]); val ipa = WORDS.getValue(m.groupValues[2])
             // A prefix before a vowel keeps a glottal stop, as the G2P reads "לאמבאפה": le-ʔembape.
             pre + (if (pre.isNotEmpty() && ipa.first() in "aeiou") "ʔ" else "") + ipa
