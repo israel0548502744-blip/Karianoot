@@ -1,0 +1,69 @@
+name: OmniVoice Hebrew probe
+
+# k2-fsa/OmniVoice (Apache-2.0, 600+ languages, only ~13 h of Hebrew in training): is its Hebrew usable?
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/omnivoice-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install -q torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q omnivoice huggingface_hub soundfile "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+      - name: Reference clip (Blue 2.5 LibriTTS male)
+        run: |
+          hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          import numpy as np, soundfile as sf
+          from blue_onnx import load_text_to_speech, load_voice_style, limit_peak
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx"); t = load_text_to_speech("blue25")
+          REF = "ערב טוב לכולם, והיום יש לנו שלושה משחקים מעולים. אני הולך להסביר לכם בדיוק על מה כדאי לשים."
+          np.random.seed(0)
+          w, _ = t(g.phonemize(REF), lang="he", style=load_voice_style(["blue25/voices/libri_male_8088.json"]), total_step=10, text_is_phonemes=True)
+          sf.write("ref.wav", limit_peak(w[0]), 44100); open("ref.txt", "w").write(REF)
+          PY
+      - name: Generate
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import time, numpy as np, soundfile as sf, torch
+          from omnivoice import OmniVoice
+          torch.set_num_threads(4)
+          m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map="cpu", dtype=torch.float32)
+          S = ["ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה.",
+               "תסתכלו על היחס, והיחס פה פשוט מטורף. אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות.",
+               "מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!"]
+          for mode in ["clone", "auto"]:
+              parts = []; t0 = time.time()
+              for s in S:
+                  kw = dict(text=s, language="he") if mode == "auto" else dict(text=s, ref_audio="ref.wav", ref_text=open("ref.txt").read())
+                  try:
+                      a = m.generate(**kw)
+                  except TypeError:
+                      kw.pop("language", None); a = m.generate(**kw)
+                  parts += [np.asarray(a[0], np.float32), np.zeros(4320, np.float32)]
+              sf.write(f"out/omni_{mode}.wav", np.concatenate(parts[:-1]), 24000)
+              print("DONE", mode, f"{time.time() - t0:.0f}s", flush=True)
+          PY
+          cp ref.wav out/ && cd out && tar czf ../omni.tgz . && cd ..
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f omni.tgz ] || exit 0
+          gh release delete omnivoice-samples -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create omnivoice-samples omni.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "OmniVoice Hebrew probe (for tools)" --notes "OmniVoice (Apache-2.0) Hebrew samples with a generic voice. Not the app."
