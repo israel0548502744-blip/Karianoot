@@ -1,0 +1,96 @@
+name: Qwen voices and bridge test
+
+# Builds qwentts.cpp + the JNI bridge for the host, makes the preset voice prints (.spk) from generic reference clips
+# (Blue 2.5 / LightBlue LibriTTS voices, and Namer from the app's own namer.json), and checks the bridge against the CLI.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-voices.yml", "android/qwen/**", "android/engine/src/main/kotlin/com/karianoot/engine/QwenNative.kt"]
+
+permissions:
+  contents: write
+
+jobs:
+  voices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build qwentts.cpp + JNI (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
+          ../../patch_qwentts.sh "$(pwd)"
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF -DQWEN_JNI_HOST=ON > /dev/null
+          cmake --build ../host --target qwenjni qwen-tts qwen-codec -j 4 2>&1 | tail -2
+          ls -la ../host/libqwenjni.so ../host/qwen-tts ../host/qwen-codec
+      - name: Models and reference clips
+        run: |
+          pip install -q huggingface_hub soundfile librosa "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS" "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+          Q=qdir; mkdir -p $Q/voices
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir $Q --include "*.gguf"
+          hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          hf download notmax123/LightBlue voices/all_voices/male/spk_03977.json voices/all_voices/male/spk_08742.json voices/all_voices/female/spk_05136.json --revision cafec196e16ded438434a1877247e82122885afe --local-dir lb
+          python - <<'PY'
+          import json, numpy as np, soundfile as sf, librosa
+          from blue_onnx import load_text_to_speech, load_voice_style, limit_peak, Style
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx"); t = load_text_to_speech("blue25")
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          REF = ("ערב טוב לכולם, והיום יש לנו שלושה משחקים מעולים. אני הולך להסביר לכם בדיוק על מה כדאי לשים, "
+                 "ולמה היחס הזה פשוט מטורף.")
+          V = {"q_male2": "blue25/voices/libri_male_8088.json", "q_male1": "blue25/voices/libri_male_6209.json",
+               "q_female": "blue25/voices/female.json", "q_tet": "lb/voices/all_voices/male/spk_03977.json",
+               "q_het": "lb/voices/all_voices/male/spk_08742.json", "q_gimel": "lb/voices/all_voices/female/spk_05136.json"}
+          for name, v in V.items():
+              np.random.seed(0)
+              w, _ = t(fix(REF), lang="he", style=load_voice_style([v]), total_step=10, text_is_phonemes=True)
+              sf.write(f"qdir/voices/{name}.wav", librosa.resample(limit_peak(w[0]), orig_sr=44100, target_sr=24000), 24000)
+          # Namer: from the app's own namer.json (personal use only, like the Blue Namer), duration from the z_ref predictor.
+          import onnxruntime as ort
+          from huggingface_hub import hf_hub_download
+          dpz = ort.InferenceSession(hf_hub_download("notmax123/BlueTTS2.5-onnx", "duration_predictor.onnx", revision="95feb5d0cbfc8e5a95bffb067d03537cbf35be3e"))
+          j = json.load(open("android/app/src/main/assets/voices/namer.json")); a = lambda k: np.array(j[k]["data"], np.float32).reshape(j[k]["dims"])
+          z = a("z_ref"); mask = np.ones((1, 1, z.shape[2]), np.float32)
+          t.dp_ort.run = lambda _o, f: dpz.run(None, {"text_ids": f["text_ids"], "z_ref": z, "text_mask": f["text_mask"], "ref_mask": mask})
+          np.random.seed(0)
+          w, _ = t(fix(REF), lang="he", style=Style(a("style_ttl"), np.zeros((1, 8, 16), np.float32)), total_step=10, text_is_phonemes=True)
+          sf.write("qdir/voices/q_namer.wav", librosa.resample(limit_peak(w[0]), orig_sr=44100, target_sr=24000), 24000)
+          open("qdir/s0.txt", "w").write(fix("ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה."))
+          PY
+          ls -la $Q $Q/voices
+      - name: Voice prints and CLI reference
+        run: |
+          B=android/qwen/build/host; Q=qdir
+          for w in $Q/voices/*.wav; do $B/qwen-codec --model $Q/qwen-tokenizer-12hz-Q4_K_M.gguf --talker $Q/qwen-talker-1.7b-base-Q4_K_M.gguf -i $w > /dev/null 2>&1 || echo "FAIL $w"; done
+          ls -la $Q/voices/*.spk
+          $B/qwen-tts --model $Q/qwen-talker-1.7b-base-Q4_K_M.gguf --codec $Q/qwen-tokenizer-12hz-Q4_K_M.gguf --ref-spk $Q/voices/q_male2.spk \
+            --lang auto --greedy --seed 1 -o $Q/cli_s0.wav < $Q/s0.txt 2>&1 | tail -3
+      - name: Bridge test (Kotlin -> JNI -> qwentts.cpp)
+        run: |
+          export KARIANOOT_QWEN=$PWD/qdir
+          set -o pipefail
+          gradle -p android :engine:test --tests 'com.karianoot.engine.QwenTest' --no-daemon -i \
+            -Dorg.gradle.jvmargs=-Xmx2g "-Pkarianoot.qwenjni=$PWD/android/qwen/build/host/libqwenjni.so" 2>&1 | grep -E "CHECK|FAIL|PASS|Exception|expected|BUILD" | head -30
+      - name: Publish voice prints
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd qdir && ls voices/*.spk && tar czf ../qwen_voices.tgz voices/*.spk cli_s0.wav $(ls jni_s0.wav 2>/dev/null) && cd ..
+          gh release delete qwen-voices -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-voices qwen_voices.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Qwen voice prints (for the app)" --notes "Speaker embeddings for the app's Qwen voices, from generic reference clips. Not the app."
