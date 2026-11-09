@@ -286,6 +286,9 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             }
         }
 
+        if (!busy && voice != null && text.isNotBlank()) speech.estimateSeconds(text, voice, speed)?.let { est ->
+            Text("זמן משוער: " + formatSeconds(est.coerceAtLeast(1f)), color = C.Faint, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
+        }
         GoldButton(if (busy) "מקריא…" else "צור קריינות", Modifier.fillMaxWidth().enter(5), icon = Icons.Rounded.AutoAwesome,
             enabled = !busy && g2pReady && voice != null && text.isNotBlank()) {
             val v = voice ?: return@GoldButton

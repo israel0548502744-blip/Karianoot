@@ -53,6 +53,28 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         onStage(s, p)
     }
 
+    private val prefs = ctx.getSharedPreferences("speed", Context.MODE_PRIVATE)
+
+    /**
+     * Seconds of work per second of audio, measured on this phone per model (smoothed), or null before the first
+     * narration with that model. Used for the time estimate in the studio.
+     */
+    fun workPerSecond(modelId: String): Float? = prefs.getFloat(modelId, -1f).takeIf { it > 0f }
+
+    /** Rough time for [text] with [voice]: ~13 characters per second of speech. Null when not measured yet. */
+    fun estimateSeconds(text: String, voice: VoiceInfo, speed: Float = 1f): Float? {
+        val rate = workPerSecond(voice.modelId) ?: return null
+        val audio = text.trim().length / 13f / (if (voice.modelId == Catalog.qwen.id) 1f else speed.coerceAtLeast(0.5f))
+        return audio * rate
+    }
+
+    private fun recordSpeed(modelId: String, workSec: Float, audioSec: Float) {
+        if (audioSec < 1f) return
+        val r = workSec / audioSec
+        val old = workPerSecond(modelId)
+        prefs.edit().putFloat(modelId, if (old == null) r else 0.6f * old + 0.4f * r).apply()
+    }
+
     /** The voice as the library shows it: name and model, since Qwen and Blue share names. */
     private fun label(v: VoiceInfo) = v.name + " · " + when (v.modelId) { Catalog.qwen.id -> "Qwen"; "blue_v3" -> "V3"; else -> "2.5" }
 
@@ -147,6 +169,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val c = Creation(f, text, label(voice), wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
                     ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed, opt.temperature)
                 save(listOf(c) + history())
+                recordSpeed(voice.modelId, c.genSeconds, c.seconds)
                 c
             }
         }
