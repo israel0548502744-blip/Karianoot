@@ -109,7 +109,9 @@ object Catalog {
         title = "Qwen עברית",
         subtitle = "הקולות הכי טבעיים וחיים. איטי יותר מ-Blue (בערך דקה לקריינות של 20 שניות).",
         repo = "notmax123/QwenTTS-he-1.7B-GGUF", revision = "2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9",
-        license = "Apache-2.0", credit = "QwenTTS-he — Max Melichov (notmax123); Qwen3-TTS — Alibaba Qwen; qwentts.cpp (MIT)",
+        license = "Apache-2.0",
+        credit = "QwenTTS-he — Max Melichov (notmax123); Qwen3-TTS — Alibaba Qwen; qwentts.cpp (MIT); " +
+            "voices from LibriTTS speakers (CC BY 4.0) via Blue 2.5 and LightBlue (MIT)",
         files = listOf(
             ModelFile("qwen-talker-1.7b-base-Q4_K_M.gguf", 1_219_245_248),
             ModelFile("qwen-tokenizer-12hz-Q4_K_M.gguf", 254_974_752),
