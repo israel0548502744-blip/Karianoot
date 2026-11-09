@@ -81,7 +81,8 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     /** One loaded voice, whatever the model: splits the text into pieces and speaks each. */
     private interface Engine {
         val sampleRate: Int
-        fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit = {}): List<BlueTts.Part>
+        /** [retake]: a new, different take (Qwen samples instead of its deterministic greedy pass). */
+        fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit = {}, retake: Boolean = false): List<BlueTts.Part>
     }
 
     private fun loadG2p(onStage: (String, Float) -> Unit): HebrewG2P {
@@ -109,8 +110,10 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             val spk = QwenTts.readSpk((voice.customFile ?: assetFile(voice.asset!!)).readBytes())
             return object : Engine {
                 override val sampleRate = q.sampleRate
-                // Greedy decoding: the setting that scored 0 word errors in the tests.
-                override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit) = q.synthesizeParts(text, spk, 0f, onProgress)
+                // Greedy decoding (0 word errors in the tests) gives the same audio every time, so a retake samples
+                // at temperature 0.6, measured as accurate as greedy (ASR, 3 voices x 2 seeds).
+                override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) =
+                    q.synthesizeParts(text, spk, if (retake) 0.6f else 0f, onProgress)
             }
         }
         val g = loadG2p(onStage)
@@ -129,7 +132,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
         return object : Engine {
             override val sampleRate = engine.sampleRate
-            override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit) = engine.synthesizeParts(text, v, opt, onProgress = onProgress)
+            override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) = engine.synthesizeParts(text, v, opt, onProgress = onProgress)
         }
     }
 
@@ -181,7 +184,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val engine = engineFor(voice) { _, _ -> }
                 val span = c.parts[i]
                 val opt = BlueTts.Options(steps = c.steps, speed = c.speed, perSentence = false, peakLimit = null, temperature = c.temperature)
-                val fresh = Wav.limitPeak(engine.parts(span.text, opt).flatMap { it.samples.asList() }.toFloatArray())
+                val fresh = Wav.limitPeak(engine.parts(span.text, opt, retake = true).flatMap { it.samples.asList() }.toFloatArray())
                 val (old, rate) = Wav.read(c.file)
                 val out = FloatArray(old.size - (span.end - span.start) + fresh.size)
                 old.copyInto(out, 0, 0, span.start)
