@@ -10,7 +10,7 @@ import kotlin.math.sqrt
 /**
  * QwenTTS-he through the JNI bridge (host build of android/qwen/qwen_jni.cpp), compared with the qwentts.cpp
  * command line on the same input. Runs in .github/workflows/qwen-voices.yml; skipped elsewhere.
- * KARIANOOT_QWEN = dir with the two GGUFs, voices/*.spk, s0.txt (IPA) and cli_s0.wav (qwen-tts --greedy output).
+ * KARIANOOT_QWEN = dir with the two GGUFs, the voice prints (voices dir, .spk), s0.txt (IPA) and cli_s0.wav (qwen-tts --greedy output).
  */
 class QwenTest {
     private val dir = System.getenv("KARIANOOT_QWEN")?.takeIf { it.isNotEmpty() }?.let(::File)
