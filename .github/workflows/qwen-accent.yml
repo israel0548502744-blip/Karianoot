@@ -1,0 +1,192 @@
+name: Qwen accent probe (Israeli resh)
+
+# Why does Qwen's ר sound rolled ("Argentinian")? Renders the same texts with different IPA symbols for ר, language
+# tags, quantizations, ICL references and temperatures; a phoneme recognizer says what came out where ר is expected,
+# whisper gives the CER, TakeCheck counts broken takes. Results: prerelease "qwen-accent" (wavs + scores.json).
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-accent.yml", "tools/qwen_accent/**"]
+
+permissions:
+  contents: write
+
+env:
+  QWEN_REV: 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9
+  QWENCPP_REV: de2ad833e9bd5c06082231d1da637789f7562816
+  LC_ALL: C.UTF-8
+
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        voice: [d_commentator, d_hype, d_veteran, male2, female]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build qwentts.cpp (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q $QWENCPP_REV && git submodule update --init --depth 1 -q
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts qwen-codec -j 4 2>&1 | tail -1
+      - name: Models, IPA variants, reference clips
+        run: |
+          pip install -q torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -q huggingface_hub soundfile numpy scipy librosa transformers faster-whisper onnxruntime \
+            "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision $QWEN_REV --local-dir q --include "*.gguf"
+          hf download notmax123/BlueTTS2.5-onnx --revision 95feb5d0cbfc8e5a95bffb067d03537cbf35be3e --local-dir blue25 --exclude "*.md" --exclude ".gitattributes"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          mkdir -p out d1 d2
+          curl -sSL --retry 3 https://github.com/$GITHUB_REPOSITORY/releases/download/designed-voices/designed.tgz | tar xz -C d1
+          curl -sSL --retry 3 https://github.com/$GITHUB_REPOSITORY/releases/download/designed-voices2/designed.tgz | tar xz -C d2
+          python tools/qwen_accent/prep.py ${{ matrix.voice }} out
+      - name: Render
+        run: |
+          V=${{ matrix.voice }}; B=android/qwen/build/host; M=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C=q/qwen-tokenizer-12hz-Q4_K_M.gguf
+          SPK=android/app/src/main/assets/qwen/q_$V.spk
+          run() {   # name, ipa file, extra flags
+            local name=$1 f=$2; shift 2
+            local n=$(python -c "import sys;print(min(40+2*len(open(sys.argv[1],encoding='utf8').read()),1500))" $f)
+            $B/qwen-tts --model $M --codec $C --ref-spk $SPK --lang auto --max-new $n "$@" -o out/$name.wav < $f > log.txt 2>&1 || { echo "FAIL $name"; tail -3 log.txt; }
+          }
+          case $V in
+            male2|female) RW=refs/blue_$V.wav; RT=REFB;;
+            d_commentator) RW=d1/$V.wav; RT=REFD1;;
+            *) RW=d2/$V.wav; RT=REFD2;;
+          esac
+          cp $RW refs/own.wav
+          case $V in d_*) cp $RW out/ref_${V}__ctl__$RT.wav;; *) cp $RW out/blue_${V}__ctl__REFB.wav;; esac
+          for w in refs/own.wav refs/blue_male2.wav; do $B/qwen-codec --model $C --talker $M -i $w > /dev/null 2>&1 || echo "FAIL codec $w"; done
+          ls -la refs
+          for p in P0 P1 R; do
+            for k in base gh rr x xcoda r; do run ${V}__${k}__$p ipa/${k}_$p.txt --greedy; done
+            for l in french german spanish; do run ${V}__lang_${l}__$p ipa/base_$p.txt --greedy --lang $l; done
+            for s in 1 2; do run ${V}__t06s${s}__$p ipa/base_$p.txt --temp 0.6 --sub-temp 0.6 --seed $s; done
+            run ${V}__icl__$p ipa/base_$p.txt --greedy --ref-rvq refs/own.rvq --ref-text ipa/$RT.txt
+            for s in 1 2; do run ${V}__icl_t06s${s}__$p ipa/base_$p.txt --temp 0.6 --sub-temp 0.6 --seed $s --ref-rvq refs/own.rvq --ref-text ipa/$RT.txt; done
+            if [ $V != male2 ]; then
+              run ${V}__iclb__$p ipa/base_$p.txt --greedy --ref-rvq refs/blue_male2.rvq --ref-text ipa/REFB.txt
+              run ${V}__iclb_t06s1__$p ipa/base_$p.txt --temp 0.6 --sub-temp 0.6 --seed 1 --ref-rvq refs/blue_male2.rvq --ref-text ipa/REFB.txt
+            fi
+            echo "DONE $p"
+          done
+          ls out | wc -l
+      - name: Score
+        run: python tools/qwen_accent/score.py out plan.json out/scores_${{ matrix.voice }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acc-${{ matrix.voice }}
+          path: out
+
+  full:
+    # Full precision (Python, F32) as the reference, and the merged model converted to GGUF at Q8_0 / BF16.
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h / | tail -1
+          sudo apt-get install -y -q ninja-build sox libsox-dev > /dev/null
+      - name: Build qwentts.cpp (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q $QWENCPP_REV && git submodule update --init --depth 1 -q
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts qwen-codec quantize -j 4 2>&1 | tail -1
+      - name: Repos and models
+        run: |
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -q qwen-tts peft safetensors gguf huggingface_hub soundfile numpy scipy librosa transformers faster-whisper onnxruntime \
+            "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus"
+          python - <<'PY'
+          from huggingface_hub import HfApi
+          api = HfApi()
+          for r in ["notmax123/QwenTTS-he-1.7B-GGUF", "notmax123/QwenTTS-he-1.7B", "Serveurperso/Qwen3-TTS-GGUF"]:
+              try:
+                  i = api.model_info(r, files_metadata=True)
+                  print("##", r, "sha=", i.sha)
+                  for s in i.siblings: print(f"  {s.size or 0:>12}  {s.rfilename}  {(s.lfs or {}).get('sha256', '') if s.lfs else ''}")
+              except Exception as e:
+                  print("##", r, "ERROR", e)
+          PY
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision $QWEN_REV --local-dir q --include "*.gguf"
+          hf download Serveurperso/Qwen3-TTS-GGUF qwen-tokenizer-12hz-F32.gguf --local-dir sp
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          mkdir -p out && python tools/qwen_accent/prep.py none out
+      - name: Full precision renders and merged checkpoint
+        run: |
+          python tools/qwen_accent/full.py d_commentator,d_hype,d_veteran,male2,female android/app/src/main/assets/qwen out \
+            android/qwen/build/qwentts.cpp/checkpoints/Qwen3-TTS-12Hz-1.7B-Base 2>&1 | grep -v "pad_token_id"
+          rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-Base && df -h / | tail -1
+      - name: Convert and quantize
+        run: |
+          cd android/qwen/build/qwentts.cpp
+          python convert.py 2>&1 | tail -8
+          rm -rf checkpoints && ls -la models
+          for t in Q8_0 BF16 Q4_K_M; do ../host/quantize models/qwen-talker-1.7b-base-F32.gguf models/talker-$t.gguf $t 2>&1 | tail -3; done
+          rm models/qwen-talker-1.7b-base-F32.gguf && ls -la models && sha256sum models/*.gguf
+      - name: Render quantization variants
+        run: |
+          B=android/qwen/build/host; MD=android/qwen/build/qwentts.cpp/models; Q4=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C4=q/qwen-tokenizer-12hz-Q4_K_M.gguf; C32=sp/qwen-tokenizer-12hz-F32.gguf
+          run() {   # name, voice, piece, talker, codec
+            local f=ipa/base_$3.txt
+            local n=$(python -c "import sys;print(min(40+2*len(open(sys.argv[1],encoding='utf8').read()),1500))" $f)
+            $B/qwen-tts --model $4 --codec $5 --ref-spk android/app/src/main/assets/qwen/q_$2.spk --lang auto --greedy --max-new $n -o out/$1.wav < $f > log.txt 2>&1 || { echo "FAIL $1"; tail -3 log.txt; }
+          }
+          for p in P0 P1 R; do run male2__q4own__$p male2 $p $MD/talker-Q4_K_M.gguf $C4; run male2__q4repo__$p male2 $p $Q4 $C4; done
+          python -c "
+          import soundfile as sf, numpy as np
+          for p in ['P0','P1','R']:
+              a,_=sf.read(f'out/male2__q4own__{p}.wav'); b,_=sf.read(f'out/male2__q4repo__{p}.wav'); n=min(len(a),len(b))
+              print('Q4 own vs repo', p, len(a), len(b), 'corr', round(float(np.corrcoef(a[:n],b[:n])[0,1]),4))"
+          rm out/male2__q4repo__*.wav
+          for v in d_commentator d_hype d_veteran male2 female; do
+            for p in P0 P1 R; do
+              run ${v}__q8__$p $v $p $MD/talker-Q8_0.gguf $C4
+              run ${v}__q8c32__$p $v $p $MD/talker-Q8_0.gguf $C32
+              run ${v}__q4c32__$p $v $p $Q4 $C32
+              run ${v}__bf16c32__$p $v $p $MD/talker-BF16.gguf $C32
+            done
+            echo "DONE $v"
+          done
+      - name: Score
+        if: always()
+        run: python tools/qwen_accent/score.py out plan.json out/scores_full.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acc-full
+          path: out
+
+  publish:
+    needs: [voice, full]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: parts
+          pattern: acc-*
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/qwen_accent/summary.py parts rel
+          mkdir wavs && find parts -name "*.wav" -exec cp {} wavs/ \; && tar czf rel/qwen_accent_wavs.tgz -C wavs . && ls -la rel
+          gh release delete qwen-accent -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-accent rel/* -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Qwen accent probe (for tools)" --notes "QwenTTS-he: what makes the resh Israeli. Renders + scores. Not the app."
