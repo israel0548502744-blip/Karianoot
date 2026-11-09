@@ -179,6 +179,19 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             }
         }
 
+    /** A short sample of [voice] (cached per voice), to choose voices by ear. */
+    suspend fun preview(voice: VoiceInfo): File = withContext(Dispatchers.Default) {
+        val f = File(ctx.cacheDir, "preview_${voice.id}.wav")
+        if (f.exists() && f.length() > 1000) return@withContext f
+        lock.withLock {
+            val engine = engineFor(voice) { _, _ -> }
+            val opt = BlueTts.Options(steps = voice.steps[1], temperature = voice.liveliness)
+            val parts = engine.parts(PREVIEW_TEXT, opt)
+            Wav.write(f, join(parts.map { it.samples }, opt, engine.sampleRate), engine.sampleRate)
+        }
+        f
+    }
+
     /** Makes sentence [i] of [c] again (a new take) and splices it into the recording. */
     suspend fun redoPart(c: Creation, i: Int, voice: VoiceInfo): Creation =
         withContext(Dispatchers.Default) {
@@ -260,7 +273,10 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         true
     }.getOrDefault(false)
 
-    companion object { const val KEEP = 30 }
+    companion object {
+        const val KEEP = 30
+        const val PREVIEW_TEXT = "ערב טוב לכל האוהדים! ככה אני נשמע, והיחס הערב פשוט מטורף."
+    }
 
     fun release() { tts?.close(); qwen?.close(); g2p?.close(); tts = null; qwen = null; g2p = null; ttsModel = null }
 }

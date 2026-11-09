@@ -251,6 +251,18 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                     }
                 }
             }
+            if (voice != null) {
+                val previewing by app.previewing.collectAsState()
+                val samplePlayer = remember { MediaPlayer() }
+                DisposableEffect(Unit) { onDispose { samplePlayer.release() } }
+                SoftButton(if (previewing == voice.id) "מכין דוגמה…" else "השמע דוגמה: ${voice.name}", Modifier.fillMaxWidth(),
+                    icon = Icons.Rounded.PlayArrow, enabled = previewing == null && !busy) {
+                    app.previewVoice(voice) { f ->
+                        if (f == null) Toast.makeText(ctx, "לא הצלחתי להכין דוגמה", Toast.LENGTH_SHORT).show()
+                        else runCatching { samplePlayer.reset(); samplePlayer.setDataSource(f.path); samplePlayer.prepare(); samplePlayer.start() }
+                    }
+                }
+            }
             if (voice?.personalOnly == true) Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.WarningAmber, null, tint = C.Amber, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))

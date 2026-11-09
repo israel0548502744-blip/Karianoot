@@ -77,6 +77,19 @@ class KarianootApp : Application() {
     /** Stops the narration being made (between pieces for Blue, within a second for Qwen). */
     fun cancelNarration() { if (_job.value.busy) { _job.value = _job.value.copy(stage = "מבטל…"); speech.cancel() } }
 
+    /** The voice whose sample is being made, or null. */
+    val previewing = MutableStateFlow<String?>(null)
+
+    fun previewVoice(v: VoiceInfo, done: (java.io.File?) -> Unit) {
+        if (previewing.value != null || _job.value.busy) return
+        previewing.value = v.id
+        scope.launch {
+            val f = runCatching { speech.preview(v) }.getOrNull()
+            previewing.value = null
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(f) }
+        }
+    }
+
     /** Making a voice from a recording; null when idle, otherwise a status line. */
     val cloning = MutableStateFlow<String?>(null)
 
