@@ -64,6 +64,8 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   (Kotlin -> JNI output equals the CLI, corr 1.0). Qwen uses greedy decoding (0 word errors in tests).
 - Studio groups voices: Qwen / Blue 2.5 / Blue V3 / mine, with a men/women filter; "השמע דוגמה" (cached sample per voice),
   time estimate (measured work/audio per model), cancel, last voice remembered.
+- `TakeCheck.kt`: a Qwen piece far from 18.5 IPA chars/s of speech (outside 11-30) or with a pause >= 1.2 s inside is
+  broken (ran on / dropped words / stalled) and is retaken sampled (up to 2x). 165/165 good takes pass, 5 ICL runaways caught.
 - Qwen speed = `TimeStretch.kt` (WSOLA, pitch kept; ASR clean at 0.9-1.3x). Retakes sample at temperature 0.6.
 - Designed voices (`voice-design.yml`): VoxCPM2 voice design from an English description -> reference clip -> Qwen
   voice print (`assets/qwen/q_d_*.spk`). Synthetic, commercial-safe. VoxCPM2 sometimes adds gibberish in long refs:

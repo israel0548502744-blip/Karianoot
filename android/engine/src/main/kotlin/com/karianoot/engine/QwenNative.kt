@@ -69,17 +69,35 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
     /** Stops the running [speakIpa] (it then fails with "cancelled"). */
     fun cancel() = QwenNative.cancel()
 
-    /** The text in pieces of 2-3 sentences, each spoken on its own (same split as Blue). */
-    fun synthesizeParts(text: String, voice: FloatArray, temperature: Float = 0f, onProgress: (Float) -> Unit = {}): List<BlueTts.Part> {
+    /**
+     * The text in pieces of 2-3 sentences, each spoken on its own (same split as Blue). A piece that comes out broken
+     * ([TakeCheck]: ran on, stalled or dropped words) is made again, sampled, up to [retakes] times; the take closest
+     * to a normal one is kept.
+     */
+    fun synthesizeParts(text: String, voice: FloatArray, temperature: Float = 0f, onProgress: (Float) -> Unit = {},
+                        retakes: Int = 2): List<BlueTts.Part> {
         val pieces = BlueTts.chunkText(BlueTts.stripEmoji(text), BlueTts.CHUNK_CHARS)
         return pieces.mapIndexed { i, piece ->
-            BlueTts.Part(piece, speakIpa(ipa(piece), voice, temperature)).also { onProgress((i + 1f) / pieces.size) }
+            val p = ipa(piece)
+            var best = speakIpa(p, voice, temperature)
+            var report = TakeCheck.measure(best, sampleRate, p.length)
+            var tries = 0
+            while (report.broken && tries < retakes) {
+                tries++
+                val alt = speakIpa(p, voice, RETAKE_TEMPERATURE, seed = 1000L * tries + i)
+                val r = TakeCheck.measure(alt, sampleRate, p.length)
+                if (r.badness < report.badness) { best = alt; report = r }
+            }
+            BlueTts.Part(piece, best).also { onProgress((i + 1f) / pieces.size) }
         }
     }
 
     override fun close() = QwenNative.free(h)
 
     companion object {
+        /** Sampling temperature for a new take: as accurate as greedy in the tests, but a different take. */
+        const val RETAKE_TEMPERATURE = 0.6f
+
         /** Qwen's own pause at a sentence end (~0.4 s measured), when a text has none to measure. */
         const val NATURAL_PAUSE = 0.4f
 

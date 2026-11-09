@@ -120,7 +120,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 // at temperature 0.6, measured as accurate as greedy (ASR, 3 voices x 2 seeds).
                 // Qwen has no speed control: pieces are time-stretched (pitch kept) to the chosen speed.
                 override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) =
-                    q.synthesizeParts(text, spk, if (retake) 0.6f else 0f, onProgress).map {
+                    q.synthesizeParts(text, spk, if (retake) QwenTts.RETAKE_TEMPERATURE else 0f, onProgress).map {
                         BlueTts.Part(it.text, com.karianoot.engine.TimeStretch.stretch(it.samples, opt.speed, q.sampleRate))
                     }
             }
