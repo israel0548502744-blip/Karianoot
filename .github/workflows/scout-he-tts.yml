@@ -1,0 +1,118 @@
+name: Scout Hebrew TTS models
+
+# Lists Hebrew-capable text-to-speech models on Hugging Face (license, size, last change, model card head),
+# because this sandbox cannot reach Hugging Face. Results go to the prerelease "scout-he-tts". Not the app.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/scout-he-tts.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests
+      - name: Query Hugging Face
+        run: |
+          mkdir -p scout && python - <<'PY'
+          import json, time, requests
+          API = "https://huggingface.co/api/models"
+          S = requests.Session()
+          def get(url, **params):
+              for i in range(4):
+                  try:
+                      r = S.get(url, params=params, timeout=60)
+                      if r.status_code == 200: return r
+                      if r.status_code in (401, 403, 404): return None
+                  except Exception as e:
+                      print("retry", url, e)
+                  time.sleep(2 ** i)
+              return None
+          found = {}
+          def add(why, **params):
+              r = get(API, full="true", limit=200, sort="lastModified", direction=-1, **params)
+              n = 0
+              for m in (r.json() if r else []):
+                  found.setdefault(m["id"], {"m": m, "why": []})["why"].append(why); n += 1
+              print(f"{why}: {n}")
+          for tag in ["text-to-speech", "text-to-audio"]:
+              for q in ["hebrew", "heb", "ivrit", "עברית", "phonikud", "renikud", "-he", "_he", "israel", "nikud", "niqqud"]:
+                  add(f"{tag}?search={q}", search=q, pipeline_tag=tag)
+              add(f"{tag}+he", filter="he", pipeline_tag=tag)
+              add(f"{tag}+heb", filter="heb", pipeline_tag=tag)
+          for q in ["hebrew tts", "hebrew-tts", "tts-he", "tts hebrew", "hebrew voice", "hebrew speech", "piper hebrew", "f5 hebrew",
+                    "xtts hebrew", "orpheus hebrew", "kokoro hebrew", "styletts hebrew", "matcha hebrew", "vits hebrew", "mms-tts-heb",
+                    "cosyvoice hebrew", "zipvoice", "chatterbox hebrew", "sesame hebrew", "csm hebrew", "dia hebrew", "phonikud",
+                    "hebrew g2p", "hebrew diacritization", "nakdan", "hebrew vocoder", "supertonic", "magpie", "blue tts", "lightblue",
+                    "hebrew snac", "hebrew lora tts", "pocket tts hebrew", "kitten tts", "neutts", "kani tts", "hebrew emotion"]:
+              add(f"search={q}", search=q)
+          for a in ["notmax123", "ivrit-ai", "maxmelichov", "thewh1teagle", "SLP-RL", "dicta-il", "Yehor", "imvladikon", "shaul",
+                    "HebArabNlpProject", "OzLabs", "MiriUll", "Zlovoblachko", "malper", "avichr", "yoad", "hmhamad", "nvidia"]:
+              if a == "nvidia":
+                  add("nvidia tts", author=a, pipeline_tag="text-to-speech")
+              else:
+                  add(f"author={a}", author=a)
+          KEEP = ("tts", "speech", "voice", "audio", "g2p", "phon", "nikud", "niqqud", "nakdan", "vocoder", "codec", "diacrit", "blue", "magpie",
+                  "piper", "vits", "kokoro", "xtts", "f5", "orpheus", "styletts", "matcha", "cosy", "chatterbox", "csm", "zipvoice", "supertonic",
+                  "enhance", "denois", "bwe", "sr")
+          rows = []
+          for mid, v in found.items():
+              m = v["m"]; tags = m.get("tags") or []
+              blob = (mid + " " + " ".join(tags) + " " + str(m.get("pipeline_tag"))).lower()
+              if not any(k in blob for k in KEEP): continue
+              if any(t in ("automatic-speech-recognition",) for t in [m.get("pipeline_tag")]): continue
+              lic = next((t.split(":", 1)[1] for t in tags if t.startswith("license:")), None) or (m.get("cardData") or {}).get("license")
+              langs = (m.get("cardData") or {}).get("language")
+              rows.append({"id": mid, "license": lic, "pipeline": m.get("pipeline_tag"), "lastModified": m.get("lastModified"),
+                           "created": m.get("createdAt"), "downloads": m.get("downloads"), "likes": m.get("likes"), "languages": langs,
+                           "base_model": (m.get("cardData") or {}).get("base_model"), "library": m.get("library_name"),
+                           "tags": [t for t in tags if not t.startswith(("license:", "region:"))][:25], "why": v["why"][:6]})
+          rows.sort(key=lambda r: r["lastModified"] or "", reverse=True)
+          print("candidates", len(rows))
+          # Details (files, sizes, model card head) for the newest ones and the most downloaded ones.
+          def hebrewish(r):
+              b = (r["id"] + " " + " ".join(r["tags"]) + " " + json.dumps(r["languages"] or "")).lower()
+              return any(k in b for k in ("hebrew", "heb", "ivrit", "-he", "_he", "phonikud", "renikud", '"he"', "nikud", "blue", "magpie")) or "he" in (r["tags"])
+          heb = [r for r in rows if hebrewish(r)]
+          pick = {r["id"]: r for r in heb[:120]}
+          for r in sorted(heb, key=lambda r: -(r["downloads"] or 0))[:40]: pick[r["id"]] = r
+          cards = []
+          for mid, r in pick.items():
+              d = get(f"{API}/{mid}", blobs="true")
+              if d:
+                  sib = d.json().get("siblings") or []
+                  r["files"] = sorted([[s.get("size") or 0, s["rfilename"]] for s in sib], reverse=True)[:12]
+                  r["total_bytes"] = sum(s.get("size") or 0 for s in sib)
+                  r["sha"] = d.json().get("sha")
+              c = get(f"https://huggingface.co/{mid}/raw/main/README.md")
+              if c is not None:
+                  r["readme_chars"] = len(c.text)
+                  cards.append(f"\n\n=================== {mid}  license={r['license']}  modified={r['lastModified']}\n" + c.text[:3500])
+          json.dump(rows, open("scout/candidates.json", "w"), ensure_ascii=False, indent=1)
+          with open("scout/candidates.md", "w") as f:
+              f.write("| id | license | modified | downloads | likes | size MB | pipeline | base | languages |\n|---|---|---|---|---|---|---|---|---|\n")
+              for r in rows:
+                  mb = round(r["total_bytes"] / 1e6) if r.get("total_bytes") else ""
+                  lg = r["languages"]; lg = (",".join(lg[:6]) + ("+" if len(lg) > 6 else "")) if isinstance(lg, list) else (lg or "")
+                  bm = r["base_model"]; bm = ",".join(bm[:2]) if isinstance(bm, list) else (bm or "")
+                  f.write(f"| {r['id']} | {r['license']} | {(r['lastModified'] or '')[:10]} | {r['downloads']} | {r['likes']} | {mb} | {r['pipeline']} | {bm} | {lg} |\n")
+          open("scout/readmes.md", "w").write("".join(cards))
+          print(open("scout/candidates.md").read()[:6000])
+          PY
+          ls -la scout
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls scout/* >/dev/null 2>&1 || exit 0
+          gh release delete scout-he-tts -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create scout-he-tts scout/* -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Scout: Hebrew TTS candidates" --notes "Hugging Face listing of Hebrew-capable TTS models (license, size, card heads). Research only. Not the app."
