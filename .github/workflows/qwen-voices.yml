@@ -86,15 +86,16 @@ jobs:
       - name: Bridge test (Kotlin -> JNI -> qwentts.cpp)
         run: |
           export KARIANOOT_QWEN=$PWD/qdir
+          mkdir -p qdir/renikud && cp renikud/model_int8.onnx qdir/renikud/
           set -o pipefail
           gradle -p android :engine:test --tests 'com.karianoot.engine.QwenTest' --no-daemon -i \
-            -Dorg.gradle.jvmargs=-Xmx2g "-Pkarianoot.qwenjni=$PWD/android/qwen/build/host/libqwenjni.so" 2>&1 | grep -E "CHECK|FAIL|PASS|Exception|expected|BUILD|Error|SIGSEGV|crash" | head -40
+            -Dorg.gradle.jvmargs=-Xmx2g "-Pkarianoot.qwenjni=$PWD/android/qwen/build/host/libqwenjni.so" 2>&1 | grep -E "CHECK|FAIL|PASS|Exception|expected|BUILD|Error|SIGSEGV|crash" | head -60
       - name: Publish voice prints
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd qdir && ls voices/*.spk && tar czf ../qwen_voices.tgz voices/*.spk cli_s0.wav $(ls jni_s0.wav 2>/dev/null) && cd ..
+          cd qdir && ls voices/*.spk && tar czf ../qwen_voices.tgz voices/*.spk cli_s0.wav $(ls jni_s0.wav pipeline.wav 2>/dev/null) && cd ..
           gh release delete qwen-voices -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
           gh release create qwen-voices qwen_voices.tgz -R "$GITHUB_REPOSITORY" --prerelease \
             --title "Qwen voice prints (for the app)" --notes "Speaker embeddings for the app's Qwen voices, from generic reference clips. Not the app."

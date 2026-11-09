@@ -53,4 +53,34 @@ class QwenTest {
             assertTrue(wav.size > 24000 && abs(wav.size - ref.size) < 2400)
         }
     }
+
+    /**
+     * The app's whole Qwen path on a football passage: TextPrep, the lexicon, the G2P, Qwen with TakeCheck retakes,
+     * and the Joiner. Writes pipeline.wav (to listen to) and fails if a piece is still broken after retakes.
+     */
+    @Test fun appPipelineWithLexicon() {
+        assumeTrue(dir != null && System.getProperty("karianoot.qwenjni") != null && File(dir, "renikud/model_int8.onnx").exists())
+        val g2p = HebrewG2P(File(dir, "renikud/model_int8.onnx").path)
+        QwenTts(File(dir, "qwen-talker-1.7b-base-Q4_K_M.gguf").path, File(dir, "qwen-tokenizer-12hz-Q4_K_M.gguf").path, g2p, 4).use { q ->
+            val spk = QwenTts.readSpk(File("../app/src/main/assets/qwen/q_d_commentator.spk").readBytes())
+            val text = TextPrep.apply(
+                "הערב ארסנל נגד באיירן מינכן, ומבאפה עם ריאל מול ברצלונה. אני הולך על תיקו ביחס 3.40, " +
+                    "והנדיקפ -1 לסיטי של גווארדיולה. מכבי נתניה מארחת את בית\"ר, ומ.ס. אשדוד נגד הפועל באר שבע. " +
+                    "שימו 100 ש\"ח על 1.05, ובדקה 90+3 הכל יכול לקרות!")
+            val t0 = System.nanoTime()
+            val parts = q.synthesizeParts(text, spk)
+            val sec = (System.nanoTime() - t0) / 1e9
+            var broken = 0
+            for (p in parts) {
+                val ipa = q.ipa(p.text)
+                val r = TakeCheck.measure(p.samples, q.sampleRate, ipa.length)
+                if (r.broken) broken++
+                println("CHECK piece rate=${"%.1f".format(r.rate)} pause=${r.longestPause} broken=${r.broken} | $ipa")
+            }
+            val j = Joiner.join(parts.map { it.samples }, parts.map { it.text }, q.sampleRate, 0f, QwenTts.NATURAL_PAUSE)
+            Wav.write(File(dir, "pipeline.wav"), j.samples, q.sampleRate)
+            println("CHECK pipeline ${"%.1f".format(j.samples.size / 24000.0)}s audio in ${"%.1f".format(sec)}s, pause ${j.pauseSeconds}")
+            assertTrue("broken pieces after retakes: $broken", broken == 0)
+        }
+    }
 }
