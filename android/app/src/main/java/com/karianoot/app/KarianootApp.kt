@@ -35,8 +35,26 @@ class KarianootApp : Application() {
     private val _job = MutableStateFlow(JobState())
     val job: StateFlow<JobState> = _job
 
+    /** True while one of the app's screens is visible (no "ready" notification then). */
+    @Volatile var inForeground = false
+        private set
+    private var started = 0
+
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(a: android.app.Activity) {
+                started++; inForeground = true
+                // Back in the app: the "ready" notification has done its job.
+                getSystemService(android.app.NotificationManager::class.java).cancel(Notify.DONE_ID)
+            }
+            override fun onActivityStopped(a: android.app.Activity) { started = maxOf(0, started - 1); inForeground = started > 0 }
+            override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) {}
+            override fun onActivityResumed(a: android.app.Activity) {}
+            override fun onActivityPaused(a: android.app.Activity) {}
+            override fun onActivitySaveInstanceState(a: android.app.Activity, b: android.os.Bundle) {}
+            override fun onActivityDestroyed(a: android.app.Activity) {}
+        })
         models = Models(this)
         pronounce = Pronunciations(this)
         speech = Speech(this, models) { pronounce.list.value }

@@ -76,7 +76,8 @@ class NarrationService : Service() {
                         .setAutoCancel(true)
                         .setContentIntent(Notify.openApp(this@NarrationService))
                         .build()
-                    nm.notify(Notify.DONE_ID, done)
+                    // Only when the user is outside the app; inside it they already see the result.
+                    if (!app.inForeground) nm.notify(Notify.DONE_ID, done)
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
