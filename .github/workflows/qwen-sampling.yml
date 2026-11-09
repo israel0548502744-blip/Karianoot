@@ -48,7 +48,7 @@ jobs:
           mkdir -p out; B=android/qwen/build/host/qwen-tts; M=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C=q/qwen-tokenizer-12hz-Q4_K_M.gguf
           declare -A CFG=( [greedy]="--greedy" [t03]="--temp 0.3 --sub-temp 0.3" [t06]="--temp 0.6 --sub-temp 0.6" \
                            [t09]="--temp 0.9 --sub-temp 0.9" [sub06]="--temp 0 --sub-temp 0.6" [talk06]="--temp 0.6 --sub-temp 0" )
-          for v in male2 tet namer; do
+          for v in male2 tet female; do
             for c in greedy t03 t06 t09 sub06 talk06; do
               for seed in 1 2; do
                 [ $c = greedy ] && [ $seed = 2 ] && continue
