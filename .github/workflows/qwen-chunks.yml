@@ -1,0 +1,85 @@
+name: Qwen chunk-size probe
+
+# Does QwenTTS-he keep words right with longer pieces (fewer audible joins)? Same passage: 1 sentence, ~130 chars, whole.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-chunks.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  chunks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build qwentts.cpp (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts -j 4 2>&1 | tail -1
+      - name: Model and pieces
+        run: |
+          pip install -q huggingface_hub soundfile numpy "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir q --include "*.gguf"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          import re, json
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx")
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          T = ("ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה. תסתכלו על היחס, והיחס פה פשוט מטורף. "
+               "אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות. מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!")
+          sents = re.findall(r"[^.!?]+[.!?]", T)
+          def pack(n):
+              out, cur = [], ""
+              for s in sents:
+                  s = s.strip()
+                  if cur and len(cur) + len(s) + 1 > n: out.append(cur); cur = s
+                  else: cur = (cur + " " + s).strip()
+              return out + [cur]
+          plan = {"sent": [s.strip() for s in sents], "c130": pack(130), "whole": [T]}
+          for k, ps in plan.items():
+              for i, p in enumerate(ps): open(f"{k}_{i}.txt", "w").write(fix(p))
+          json.dump({k: len(v) for k, v in plan.items()}, open("plan.json", "w")); print(plan)
+          PY
+      - name: Render
+        run: |
+          mkdir -p out; B=android/qwen/build/host/qwen-tts; M=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C=q/qwen-tokenizer-12hz-Q4_K_M.gguf
+          for v in male2 tet; do
+            for f in sent_*.txt c130_*.txt whole_*.txt; do
+              b=${f%.txt}; $B --model $M --codec $C --ref-spk android/app/src/main/assets/qwen/q_$v.spk --lang auto --greedy \
+                 --max-new 1500 -o out/${v}_$b.wav < $f > /dev/null 2>&1 || echo "FAIL $v $b"
+            done
+            echo "DONE $v"
+          done
+          python - <<'PY'
+          import json, glob, numpy as np, soundfile as sf
+          plan = json.load(open("plan.json"))
+          for v in ["male2", "tet"]:
+              for k, n in plan.items():
+                  parts = []
+                  for i in range(n):
+                      w, sr = sf.read(f"out/{v}_{k}_{i}.wav", dtype="float32")
+                      f = int(sr * 0.025); w[:f] *= np.linspace(0, 1, f); w[-f:] *= np.linspace(1, 0, f)
+                      parts += [w, np.zeros(int(sr * 0.15), np.float32)]
+                  sf.write(f"out/joined_{v}_{k}.wav", np.concatenate(parts[:-1]), sr)
+          PY
+          cd out && tar czf ../qwen_chunks.tgz joined_*.wav && cd ..
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f qwen_chunks.tgz ] || exit 0
+          gh release delete qwen-chunks -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-chunks qwen_chunks.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Qwen chunk-size probe (for tools)" --notes "QwenTTS-he, same passage in pieces of different length. Not the app."
