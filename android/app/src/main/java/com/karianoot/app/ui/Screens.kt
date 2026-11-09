@@ -278,6 +278,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             LabeledSlider("הפסקה בין משפטים", if (pause < 0.05f) "טבעית" else "%.2f שנ׳".format(pause), pause, 0f..0.8f) {
                 pause = if (it < 0.05f) 0f else it
             }
+            Text(if (pause < 0.05f) "כל סוף משפט נעצר כמו שהקול עוצר בעצמו, גם בין הקטעים." else "כל סוף משפט נעצר בדיוק כך, גם בין הקטעים.",
+                color = C.Faint, fontSize = 12.sp)
             if (!isQwen) {
                 LabeledSlider("חיות (פחות רובוטי)", "%.1f".format(alive), alive, 0.8f..1.5f) { alive = it }
                 Text("איכות", color = C.Sub, fontSize = 14.sp)
