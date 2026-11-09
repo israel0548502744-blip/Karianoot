@@ -62,7 +62,9 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   accurate as greedy (ASR ~1% CER on number-free sentences), so retakes sample at 0.6 (greedy repeats itself).
 
 - Magpie Hebrew (notmax123/magpie_tts_multilingual_357m-he, NVIDIA Open Model License = commercial OK; 357M, 15 baked
-  Hebrew voices, IPA in, no cloning): probing quality with NeMo on CPU (`magpie-probe.yml`, needs a CUDA->CPU shim).
+  Hebrew voices, IPA in, no cloning). Probed with NeMo on CPU (`magpie-probe.yml`, CUDA->CPU shim): CER 0.6% on 13/15
+  voices (Qwen ~1%), male voices lively (pitch movement 4.6-5.9 st). NeMo itself is slow (RTF ~11, no KV cache).
+  Samples in picker round r12; waiting for the user's ear before building it in.
   Phone path if good: github.com/mudler/magpie-tts.cpp (MIT, ggml, C API `magpie_tts.h`, ~realtime on aarch64 CPU per its
   benchmarks); the Hebrew ckpt would need converting (extra char tokenizer + 20 baked speakers).
 - Qwen + punctuation (`qwen-energy.yml`, Nov 9): "!!" at sentence ends sometimes raises pitch movement/range (one piece
