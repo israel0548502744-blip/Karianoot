@@ -33,6 +33,8 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   `HebrewG2P.phonemize` runs it first, like RenikudPlus.
 - `BlueTts.Options.perSentence` (default on): pieces of 2-3 sentences (`CHUNK_CHARS` 130) with 25 ms fades; as accurate as
   one sentence at a time (ASR), fewer audible joins. `Options.temperature` = liveliness (Namer 1.1, picked by ear).
+- `TextPrep.kt`: football text cleanup before G2P (1X2, handicap minus, scores vs times, ת"א etc., Latin acronyms
+  -> Hebrew letter names with niqqud). Runs after the user's pronunciation fixes.
 - Voice picker page (artifact FxyMdtTTTA4sxxSno8SZtU, db collection `picks`): the user's choices per round.
 - `BlueTts.IPA_FIXES`: "היחס" → doubled y, "ברצלונה" → baʁtselˈona (the user picked both by ear). User fixes: `Pronounce.kt` + "תיקוני הגייה" dialog.
 - Namer ("נמר"): `app/src/main/assets/voices/namer.json`, made from the user's ElevenLabs clips (the mp3s are NOT in

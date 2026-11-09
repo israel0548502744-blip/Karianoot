@@ -8,6 +8,7 @@ import com.karianoot.engine.BlueVoice
 import com.karianoot.engine.HebrewG2P
 import com.karianoot.engine.Pronounce
 import com.karianoot.engine.QwenTts
+import com.karianoot.engine.TextPrep
 import com.karianoot.engine.Wav
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -132,7 +133,8 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val stage = guard(onStage)
                 val engine = engineFor(voice, stage)
                 stage("מקריא…", 0.02f)
-                val parts = engine.parts(Pronounce.apply(text, fixes()), opt) { p -> stage("מקריא…", p) }
+                // The user's fixes first (they win), then the football-text cleanup (1X2, PSG, ת"א, scores).
+                val parts = engine.parts(TextPrep.apply(Pronounce.apply(text, fixes())), opt) { p -> stage("מקריא…", p) }
                 val wav = join(parts.map { it.samples }, opt, engine.sampleRate)
                 val gap = (opt.silence * engine.sampleRate).toInt()
                 var pos = 0
