@@ -70,6 +70,15 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Qwen + punctuation (`qwen-energy.yml`, Nov 9): "!!" at sentence ends sometimes raises pitch movement/range (one piece
   4.2 -> 5.8 st), often no change; "," before key words no effect; CER unchanged. Not built in; samples in picker round r11.
 
+## User picks (Nov 9 noon, picker db `picks`)
+- Magpie (r12): best female5 (speaker 10, "almost fully realistic"); loved voice3 (19) and voice2 (18, "a bit robotic");
+  good 6, 9, 11, 12, 13, 15, 16; rejected 7, 8, 14, 17 (5 unmarked). -> building Magpie into the app.
+- Qwen: most voices rejected for an "Argentinian accent" = a strong/rolled ר (r6, r8, r11). Keep d_commentator, d_hype,
+  d_veteran. The VoxCPM2 reference of d_commentator was the favourite of r8 (too heavy for the phone). Older r5: full-precision
+  Python Qwen male2/tet "good", the phone engine (qwentts.cpp Q4_K_M) "bad" -> quantization may hurt.
+- Joins (r9): picked the OLD Blue joins (0.2 s between pieces) over every sentence at 0.11 s -> Joiner floor, Blue MIN_PAUSE 0.2.
+- Names (r10, Qwen commentator): "not accurate, mistakes in words, still robotic".
+
 ## Qwen in the app (Nov 9 2026)
 - `android/qwen/`: `qwen_jni.cpp` (JNI over the qwentts.cpp C API), `build_android.sh` (NDK arm64, run by build-apk.yml),
   `patch_qwentts.sh` (QT_N_THREADS override, qwenjni target). Kotlin: `engine/QwenNative.kt` (`QwenTts`).
