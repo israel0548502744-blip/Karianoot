@@ -176,12 +176,16 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var fixesOpen by remember { mutableStateOf(false) }
     val fixes by app.pronounce.list.collectAsState()
     val ready = (Catalog.voices + custom).filter { v -> v.needs.all { states[it] == ModelState.Ready } }
-    var voiceId by remember { mutableStateOf(Catalog.voices.first().id) }
+    // The last voice and pause are remembered across app starts.
+    val prefs = remember { ctx.getSharedPreferences("studio", android.content.Context.MODE_PRIVATE) }
+    var voiceId by remember { mutableStateOf(prefs.getString("voice", null) ?: Catalog.voices.first().id) }
+    LaunchedEffect(voiceId) { prefs.edit().putString("voice", voiceId).apply() }
     val voice = ready.firstOrNull { it.id == voiceId } ?: ready.firstOrNull()
     var alive by remember(voice?.id) { mutableFloatStateOf(voice?.liveliness ?: 1f) }
     var speed by remember { mutableFloatStateOf(1.0f) }
     var quality by remember { mutableStateOf(1) } // 0 fast, 1 good, 2 best
-    var pause by remember { mutableFloatStateOf(0.15f) }
+    var pause by remember { mutableFloatStateOf(prefs.getFloat("pause", 0.15f)) }
+    LaunchedEffect(pause) { prefs.edit().putFloat("pause", pause).apply() }
     val busy = job.busy
     val last = job.result
     val g2pReady = states["g2p"] == ModelState.Ready

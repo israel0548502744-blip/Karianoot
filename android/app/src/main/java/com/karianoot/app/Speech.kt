@@ -147,7 +147,9 @@ class Speech(private val ctx: Context, private val models: Models, private val f
 
     /** A Qwen voice print from a recording (44.1 kHz mono), for "make a voice from a recording". */
     suspend fun qwenVoicePrint(wav44k: FloatArray): FloatArray = withContext(Dispatchers.Default) {
-        lock.withLock { loadQwen { _, _ -> }.voicePrint(com.karianoot.engine.VoiceCloner.resample(wav44k, 44100, 24000)) }
+        // The first 20 s are plenty for a voice print and keep the encoder quick on long recordings.
+        val clip = if (wav44k.size > 20 * 44100) wav44k.copyOf(20 * 44100) else wav44k
+        lock.withLock { loadQwen { _, _ -> }.voicePrint(com.karianoot.engine.VoiceCloner.resample(clip, 44100, 24000)) }
     }
 
     suspend fun speak(text: String, voice: VoiceInfo, opt: BlueTts.Options, onStage: (String, Float) -> Unit): Creation =
