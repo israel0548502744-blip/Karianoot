@@ -34,7 +34,8 @@ jobs:
           git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
           ../../patch_qwentts.sh "$(pwd)"
           cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF -DQWEN_JNI_HOST=ON > /dev/null
-          cmake --build ../host --target qwenjni qwen-tts qwen-codec -j 4 2>&1 | tail -2
+          cmake --build ../host --target qwen-tts qwen-codec -j 4 2>&1 | tail -2
+          cmake --build ../host --target qwenjni -j 4 2>&1 | grep -E "error|Error|undefined|FAILED" -A3 | head -40 || true
           ls -la ../host/libqwenjni.so ../host/qwen-tts ../host/qwen-codec
       - name: Models and reference clips
         run: |
