@@ -157,8 +157,6 @@ private fun BottomBar(tab: Tab, onSelect: (Tab) -> Unit) {
         }
     }
 }
-
-private const val SAMPLE = "ערב טוב לכולם! היום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק למה. " +
     "תישארו עד הסוף, ואל תשכחו להצטרף לקבוצה."
 
 @Composable
@@ -174,6 +172,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var newVoice by remember { mutableStateOf(false) }
     var gender by remember { mutableStateOf(0) } // 0 all, 1 men, 2 women
     var fixesOpen by remember { mutableStateOf(false) }
+    var templatesOpen by remember { mutableStateOf(false) }
     val fixes by app.pronounce.list.collectAsState()
     val ready = (Catalog.voices + custom).filter { v -> v.needs.all { states[it] == ModelState.Ready } }
     // The last voice and pause are remembered across app starts.
@@ -225,10 +224,12 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${text.length} תווים", color = C.Faint, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                if (text.isEmpty()) SoftButton("טקסט לדוגמה", icon = Icons.Rounded.AutoAwesome) { text = SAMPLE }
-                else SoftButton("נקה", icon = Icons.Rounded.Close) { text = "" }
+                SoftButton("תבניות", icon = Icons.Rounded.AutoAwesome) { templatesOpen = true }
+                Spacer(Modifier.width(8.dp))
+                if (text.isNotEmpty()) SoftButton("נקה", icon = Icons.Rounded.Close) { text = "" }
             }
         }
+        if (templatesOpen) TemplatesDialog(onPick = { t -> text = if (text.isBlank()) t else text.trimEnd() + " " + t }) { templatesOpen = false }
 
         Section(Modifier.enter(3), title = "קול") {
             Segmented(listOf("הכל", "גברים", "נשים"), gender) { gender = it }
@@ -350,6 +351,39 @@ private fun NewVoiceChip(cloning: String?, onClick: () -> Unit) {
         Text(if (cloning != null) "מכין…" else "קול חדש", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
         Text("מהקלטה", color = C.Faint, fontSize = 11.sp)
     }
+}
+
+/** Building blocks for a tips video script; [brackets] are for the user to fill in. */
+private val TEMPLATES = listOf(
+    "פתיחה" to "ערב טוב לכל האוהדים! היום יש לנו [מספר] משחקים חמים, ואני הולך להסביר לכם בדיוק על מה לשים.",
+    "משחק" to "המשחק הראשון: [קבוצה] נגד [קבוצה]. אני הולך על [הימור], ביחס של [יחס].",
+    "נימוק" to "למה? כי [קבוצה] ניצחה ב-[מספר] מתוך חמשת המשחקים האחרונים שלה, והיא פשוט בכושר מטורף.",
+    "עוד משחק" to "ועכשיו למשחק השני: [קבוצה] מול [קבוצה]. פה אני ממליץ על [הימור], והיחס [יחס].",
+    "סיכום" to "ביחד זה יוצא טופס ביחס כולל של [יחס]. אל תפספסו את זה!",
+    "סגירה" to "מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!",
+)
+
+@Composable
+private fun TemplatesDialog(onPick: (String) -> Unit, close: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("תבניות לסרטון טיפים", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("לוחצים על משפט והוא נוסף לטקסט. מחליפים את מה שבסוגריים [כמו כאן] בפרטים של המשחק.",
+                    color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
+                for ((title, t) in TEMPLATES) Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x22FFF4DC))
+                        .border(1.dp, C.Stroke, RoundedCornerShape(14.dp)).pressable { onPick(t) }.padding(12.dp)
+                ) {
+                    Text(title, color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(t, color = C.Text, fontSize = 14.sp, lineHeight = 20.sp)
+                }
+            }
+        },
+        confirmButton = { SoftButton("סגירה", onClick = close) },
+    )
 }
 
 /** "Say this word like that": the user's own pronunciation fixes. */
