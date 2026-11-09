@@ -61,6 +61,9 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Qwen measurements (Nov 9): whole passage in one pass drops the end -> keep 130-char pieces; sampling (0.3-0.9) is as
   accurate as greedy (ASR ~1% CER on number-free sentences), so retakes sample at 0.6 (greedy repeats itself).
 
+- Qwen + punctuation (`qwen-energy.yml`, Nov 9): "!!" at sentence ends sometimes raises pitch movement/range (one piece
+  4.2 -> 5.8 st), often no change; "," before key words no effect; CER unchanged. Not built in; samples in picker round r11.
+
 ## Qwen in the app (Nov 9 2026)
 - `android/qwen/`: `qwen_jni.cpp` (JNI over the qwentts.cpp C API), `build_android.sh` (NDK arm64, run by build-apk.yml),
   `patch_qwentts.sh` (QT_N_THREADS override, qwenjni target). Kotlin: `engine/QwenNative.kt` (`QwenTts`).
