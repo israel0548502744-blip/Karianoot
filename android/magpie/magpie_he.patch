@@ -1,0 +1,132 @@
+diff --git a/src/magpie_tts.cpp b/src/magpie_tts.cpp
+index fef5516..a739e7c 100644
+--- a/src/magpie_tts.cpp
++++ b/src/magpie_tts.cpp
+@@ -26,6 +26,7 @@
+ #include <array>
+ #include <chrono>
+ #include <cmath>
++#include <cstdlib>
+ #include <cstring>
+ #include <limits>
+ #include <memory>
+@@ -277,6 +278,9 @@ magpie_tts_codes magpie_tts_synthesize_codes(magpie_tts_context& ctx,
+     const int  n_stream = use_cfg ? 2 : 1;
+     const int  n_threads = resolve_threads(options);
+     const int32_t min_frames = (int32_t)hp.sampling.min_generated_frames;
++    // Attention prior: the GGUF default, or MAGPIE_PRIOR=0/1 (for experiments).
++    bool apply_prior = hp.prior.apply;
++    if (const char* e = std::getenv("MAGPIE_PRIOR")) apply_prior = e[0] == '1';
+ 
+     // speaker: name (hparams.speaker.names) or index
+     int32_t spk = options.speaker_index;
+@@ -379,7 +383,7 @@ magpie_tts_codes magpie_tts_synthesize_codes(magpie_tts_context& ctx,
+         }
+ 
+         // prior applied from step 1 on (start_after_n_audio_steps = 0)
+-        const std::vector<float>* prior = (hp.prior.apply && !prior_vec.empty())
++        const std::vector<float>* prior = (apply_prior && !prior_vec.empty())
+             ? &prior_vec : nullptr;
+ 
+         dec_step_result r = run_dec_step(ctx.compute, model, cache, dec_in, n_new,
+@@ -400,7 +404,7 @@ magpie_tts_codes magpie_tts_synthesize_codes(magpie_tts_context& ctx,
+                           (1.0f - cfg_scale) * r.logits[P + j];
+ 
+         // ---- next-step prior from this step's cross-attn (cond stream) ----
+-        if (hp.prior.apply) {
++        if (apply_prior) {
+             std::vector<const float*> layer_ptrs;
+             for (const auto& xl : r.xattn) layer_ptrs.push_back(xl.data());
+             const std::vector<float> scores = magpie_prior_alignment_scores(
+diff --git a/src/model_loader.cpp b/src/model_loader.cpp
+index 4a93015..7f0fb02 100644
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -131,8 +131,11 @@ static void read_hparams(mg::kv_reader& kv, magpie_hparams& h) {
+     t.pad_ids             = kv.require_arr_i32("magpie.tokenizer.pad_ids");
+     t.language_map_keys   = kv.require_arr_str("magpie.tokenizer.language_map.keys");
+     t.language_map_values = kv.require_arr_str("magpie.tokenizer.language_map.values");
+-    t.g2p_names           = kv.require_arr_str("magpie.tokenizer.g2p.names");
+-    t.g2p_heteronym_names = kv.require_arr_str("magpie.tokenizer.g2p.heteronym_names");
++    // optional: a single-language GGUF (Hebrew IPA) carries no G2P dictionaries
++    if (kv.has("magpie.tokenizer.g2p.names"))
++        t.g2p_names = kv.require_arr_str("magpie.tokenizer.g2p.names");
++    if (kv.has("magpie.tokenizer.g2p.heteronym_names"))
++        t.g2p_heteronym_names = kv.require_arr_str("magpie.tokenizer.g2p.heteronym_names");
+ }
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/src/tokenizer.cpp b/src/tokenizer.cpp
+index bc17346..f0d4bdd 100644
+--- a/src/tokenizer.cpp
++++ b/src/tokenizer.cpp
+@@ -591,6 +591,50 @@ std::vector<int32_t> encode_arabic(const sub_tokenizer& st, const std::string& t
+     return cs;
+ }
+ 
++// NeMo BaseCharsTokenizer.encode (the Hebrew IPA tokenizer of
++// notmax123/magpie_tts_multilingual_357m-he: one token per IPA symbol).
++// Spaces are collapsed (never leading), trailing spaces stripped, symbols
++// outside the vocabulary skipped. On top of NeMo: other whitespace counts as a
++// space, and a few symbols the vocabulary lacks are mapped to the closest one
++// it has (only when the symbol itself is not in the vocabulary).
++std::vector<int32_t> encode_chars(const sub_tokenizer& st, const std::string& text) {
++    static const std::unordered_map<uint32_t, uint32_t> fallback = {
++        {'g', 0x0261}, {'x', 0x03C7}, {0x0263, 0x0281}, {0x0280, 0x0281}, {0x027E, 0x0281},
++        {'w', 'v'}, {0x0292, 0x0283}, {'q', 'k'}, {'c', 'k'}, {'y', 'j'},
++        {';', ','}, {':', ','}, {0x2026, '.'}, {0x05C3, '.'},
++        {'-', ' '}, {0x05BE, ' '}, {0x2013, ' '}, {0x2014, ' '}, {0x00A0, ' '},
++    };
++    std::vector<int32_t> cs;
++    std::string skipped;
++    for (uint32_t cp : utf8_decode(any_locale_pre(text))) {
++        if (cp == '\t' || cp == '\n' || cp == '\r') cp = ' ';
++        std::string c = cp_str(cp);
++        if (cp != ' ' && !st.in_vocab(c)) {
++            if (cp >= 'A' && cp <= 'Z') cp += 0x20;
++            c = cp_str(cp);
++            if (!st.in_vocab(c)) {
++                auto it = fallback.find(cp);
++                if (it != fallback.end()) { cp = it->second; c = cp_str(cp); }
++            }
++        }
++        if (cp == ' ') {
++            if (!cs.empty() && cs.back() != st.space_local) cs.push_back(st.space_local);
++        } else if (c.size() >= 1 && st.in_vocab(c)) {
++            cs.push_back(st.id(c));
++        } else if (cp != 0x02CC) {  // secondary stress: dropped silently
++            skipped += c;
++        }
++    }
++    if (!skipped.empty())
++        MG_LOG("tokenizer %s: skipped unknown symbols '%s'", st.name.c_str(), skipped.c_str());
++    while (!cs.empty() && cs.back() == st.space_local) cs.pop_back();
++    if (st.pad_with_space) {
++        cs.insert(cs.begin(), st.space_local);
++        cs.push_back(st.space_local);
++    }
++    return cs;
++}
++
+ // HF ByT5 (google/byt5-small): <pad>=0, </s>=1, <unk>=2, byte b -> b + 3.
+ // encode(add_special_tokens=True) appends </s>; NeMo uses the tokenizer
+ // as-is, so the trailing </s> is part of the reference stream.
+@@ -652,7 +696,8 @@ void magpie_tokenizer::init(const magpie_model& model) {
+         for (int32_t j = 0; j < s.size; ++j)
+             s.vocab[tokens[s.offset + j]] = j;  // Python dict semantics: last wins
+ 
+-        const bool needs_space = s.cls == "IPATokenizer" || s.cls == "ArabicCharsTokenizer";
++        const bool needs_space = s.cls == "IPATokenizer" || s.cls == "ArabicCharsTokenizer" ||
++                                 s.cls == "BaseCharsTokenizer";
+         if (needs_space &&
+             (s.space_local < 0 || s.space_local >= s.size ||
+              tokens[s.offset + s.space_local] != " "))
+@@ -710,6 +755,8 @@ std::vector<int32_t> magpie_tokenizer::encode(const std::string& text,
+         local = encode_ipa(st, text);
+     } else if (st.cls == "ArabicCharsTokenizer") {
+         local = encode_arabic(st, text);
++    } else if (st.cls == "BaseCharsTokenizer") {
++        local = encode_chars(st, text);
+     } else if (st.cls == "ByT5Tokenizer") {
+         local = encode_byt5(text);
+     } else if (st.cls == "ChinesePhonemesTokenizer" || st.cls == "JapanesePhonemeTokenizer") {

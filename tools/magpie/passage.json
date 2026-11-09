@@ -1,0 +1,13 @@
+{
+ "note": "Test passage of magpie-probe.yml: Hebrew pieces and their RenikudPlus IPA (with the two pronunciation fixes).",
+ "pieces": [
+  {
+   "text": "ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה. תסתכלו על היחס, והיחס פה פשוט מטורף.",
+   "ipa": "ʔˈeʁev tˈov lekˈol haʔohadˈim! haʔˈeʁev jˈeʃ lanˈu misχˈak ʔanˈak bˈen ʁeʔˈal madʁˈid lebaʁtselˈona. tistaklˈu ʔˈal hajjˈaχas, vehajjˈaχas pˈo paʃˈut metoʁˈaf."
+  },
+  {
+   "text": "אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות. מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!",
+   "ipa": "ʔanˈi mamlˈits lasˈim ʔˈal nitsaχˈon ʃˈel ʁeʔˈal, veʃnˈej ʃeʔaʁˈim lefaχˈot. mˈi ʃeʔˈod lˈo hitstaʁˈef lakvutsˈa, zˈe hazmˈan. behatslaχˈa lekulˈam, venitʁaʔˈe bamisχˈak habˈa!"
+  }
+ ]
+}

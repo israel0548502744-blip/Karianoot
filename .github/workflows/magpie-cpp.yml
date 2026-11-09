@@ -1,0 +1,110 @@
+name: Magpie Hebrew for the phone (GGUF)
+
+# Converts notmax123/magpie_tts_multilingual_357m-he (NVIDIA Open Model License) to one GGUF for magpie-tts.cpp (MIT),
+# quantizes it, renders the test passage with the C++ engine, times it and scores it with the Hebrew recognizer.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/magpie-cpp.yml", "tools/magpie/**", "android/magpie/*.patch", "android/magpie/patch_magpie.sh"]
+
+permissions:
+  contents: write
+
+env:
+  MAGPIE_HE_REV: d0c5e96fdc167e3f2286e9ce5813b3c795f0b53a
+  CODEC_REPO: nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps
+
+jobs:
+  gguf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine (magpie-tts.cpp + Hebrew patch)
+        run: |
+          android/magpie/patch_magpie.sh "$PWD/mcpp"
+          cmake -S mcpp -B mcpp/build -DCMAKE_BUILD_TYPE=Release -DMAGPIE_BUILD_TESTS=OFF > /dev/null
+          cmake --build mcpp/build -j "$(nproc)" 2>&1 | tail -3
+          # ggml's own K-quant encoder, for the quantizer script
+          cmake -S mcpp/third_party/ggml -B ggml-so -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DGGML_BUILD_TESTS=OFF -DGGML_BUILD_EXAMPLES=OFF > /dev/null
+          cmake --build ggml-so --target ggml-base -j "$(nproc)" 2>&1 | tail -1
+          find ggml-so -name "libggml-base.so*" | head -3
+          nproc; lscpu | grep "Model name"
+      - name: Python
+        run: |
+          pip install -q torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -q gguf pyyaml numpy huggingface_hub soundfile scipy faster-whisper
+      - name: Models
+        run: |
+          hf download notmax123/magpie_tts_multilingual_357m-he --revision $MAGPIE_HE_REV --local-dir ckpt \
+            --include magpie_hebrew.ckpt hparams.yaml speaker_index.json "assets/*.json" > /dev/null
+          CODEC_REV=$(python -c "from huggingface_hub import HfApi; print(HfApi().model_info('$CODEC_REPO').sha)")
+          echo "CODEC_REV=$CODEC_REV" | tee -a "$GITHUB_ENV"
+          hf download $CODEC_REPO nemo-nano-codec-22khz-1.89kbps-21.5fps.nemo --revision $CODEC_REV --local-dir codec > /dev/null
+          mkdir codec_x && tar -xf codec/*.nemo -C codec_x && ls codec_x
+          ls -la ckpt ckpt/assets
+          echo "---- hparams.yaml (without the long lists)"; grep -v "^ *- " ckpt/hparams.yaml | cut -c1-160 | head -150
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          curl -sSL -o nemo.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-probe/magpie.tgz" && mkdir nemo && tar xzf nemo.tgz -C nemo || true
+      - name: Convert and quantize
+        run: |
+          mkdir -p rel
+          python tools/magpie/convert_he.py --ckpt-dir ckpt --codec-dir codec_x --magpie-cpp mcpp \
+            --out rel/magpie-he-f32.gguf --info-out convert_info.json
+          export MAGPIE_GGML_LIB=$(find ggml-so -name "libggml-base.so" | head -1)
+          for q in q8_0 q4_k; do
+            python mcpp/scripts/quantize_gguf.py --src rel/magpie-he-f32.gguf --out rel/magpie-he-$q.gguf --type $q
+          done
+          ls -la rel
+          mcpp/build/examples/cli/magpie-cli info --model rel/magpie-he-q8_0.gguf | grep -A4 "text:\|speaker:\|sampling:\|prior:\|tokenizer:" | cut -c1-200
+          rm -f ckpt/magpie_hebrew.ckpt
+      - name: Speak, time and score
+        run: |
+          # symbols outside the set, spaces and mappings must not crash
+          mcpp/build/examples/cli/magpie-cli say --model rel/magpie-he-q8_0.gguf --lang he --speaker 10 --seed 1 \
+            --text "  ʃalˈom,  wˈow  dʒˈins 12 שלום Garage x-y… " --output odd.wav 2>&1 | tail -4
+          NEMO=$(dirname "$(find nemo -name 'predicted_audio_0.wav' | head -1)")
+          export PLAN="q8_0=rel/magpie-he-q8_0.gguf:10,18,19,13,6; q4_k=rel/magpie-he-q4_k.gguf:10,18,19,13,6; f32=rel/magpie-he-f32.gguf:10,13; q8_0_prior=rel/magpie-he-q8_0.gguf:10,13:prior"
+          python tools/magpie/run_eval.py mcpp/build/examples/cli/magpie-cli tools/magpie/passage.json wavs asr "$NEMO"
+      - name: Results
+        if: always()
+        run: |
+          python - <<'PY'
+          import glob, hashlib, json, os, subprocess
+          def load(p):
+              return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else None
+          files = {}
+          for p in sorted(glob.glob("rel/*.gguf")):
+              h = hashlib.sha256()
+              with open(p, "rb") as f:
+                  for b in iter(lambda: f.read(1 << 22), b""): h.update(b)
+              files[os.path.basename(p)] = {"bytes": os.path.getsize(p), "sha256": h.hexdigest()}
+          res = {"model": "notmax123/magpie_tts_multilingual_357m-he", "model_revision": os.environ["MAGPIE_HE_REV"],
+                 "codec": os.environ["CODEC_REPO"], "codec_revision": os.environ.get("CODEC_REV"),
+                 "magpie_tts_cpp": subprocess.run(["git", "-C", "mcpp", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip(),
+                 "runner_cpu": subprocess.run("lscpu | grep 'Model name' | cut -d: -f2", shell=True, capture_output=True, text=True).stdout.strip(),
+                 "files": files, "convert": load("convert_info.json"), "eval": load("wavs/eval.json")}
+          json.dump(res, open("rel/results.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          print(json.dumps({k: v for k, v in res.items() if k != "eval"}, ensure_ascii=False, indent=1))
+          print(json.dumps((res["eval"] or {}).get("summary"), indent=1))
+          PY
+          [ -d wavs ] && tar czf rel/wavs.tgz wavs odd.wav || true
+          cat > rel/NOTICE.txt <<'TXT'
+          magpie-he-*.gguf: weights of notmax123/magpie_tts_multilingual_357m-he (a fine-tune of
+          nvidia/magpie_tts_multilingual_357m) and of nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps, converted for
+          magpie-tts.cpp. The weights are governed by the NVIDIA Open Model License:
+          https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/
+          TXT
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls rel/*.gguf > /dev/null 2>&1 || exit 0
+          ls -la rel
+          gh release delete magpie-gguf -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create magpie-gguf rel/* -R "$GITHUB_REPOSITORY" --prerelease --title "Magpie Hebrew GGUF (for the phone engine)" \
+            --notes "notmax123/magpie_tts_multilingual_357m-he converted for magpie-tts.cpp. Weights: NVIDIA Open Model License (see NOTICE.txt). Not the app."
