@@ -272,8 +272,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
 
         Section(Modifier.enter(4), title = "כיוונון") {
             val isQwen = voice?.modelId == Catalog.qwen.id
-            if (isQwen) Text("ב-Qwen הקצב, הרגש והאיכות נקבעים לבד. אפשר לכוון רק את ההפסקה בין משפטים.", color = C.Faint, fontSize = 12.sp)
-            else LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
+            LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
+            if (isQwen) Text("ב-Qwen הרגש והאיכות נקבעים לבד; המהירות משנה רק את הקצב, לא את גובה הקול.", color = C.Faint, fontSize = 12.sp)
             LabeledSlider("הפסקה בין משפטים", "%.2f שנ׳".format(pause), pause, 0f..0.8f) { pause = it }
             if (!isQwen) {
                 LabeledSlider("חיות (פחות רובוטי)", "%.1f".format(alive), alive, 0.8f..1.5f) { alive = it }

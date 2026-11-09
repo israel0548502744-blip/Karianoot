@@ -64,7 +64,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     /** Rough time for [text] with [voice]: ~13 characters per second of speech. Null when not measured yet. */
     fun estimateSeconds(text: String, voice: VoiceInfo, speed: Float = 1f): Float? {
         val rate = workPerSecond(voice.modelId) ?: return null
-        val audio = text.trim().length / 13f / (if (voice.modelId == Catalog.qwen.id) 1f else speed.coerceAtLeast(0.5f))
+        val audio = text.trim().length / 13f / speed.coerceAtLeast(0.5f)
         return audio * rate
     }
 
@@ -112,8 +112,11 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 override val sampleRate = q.sampleRate
                 // Greedy decoding (0 word errors in the tests) gives the same audio every time, so a retake samples
                 // at temperature 0.6, measured as accurate as greedy (ASR, 3 voices x 2 seeds).
+                // Qwen has no speed control: pieces are time-stretched (pitch kept) to the chosen speed.
                 override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) =
-                    q.synthesizeParts(text, spk, if (retake) 0.6f else 0f, onProgress)
+                    q.synthesizeParts(text, spk, if (retake) 0.6f else 0f, onProgress).map {
+                        BlueTts.Part(it.text, com.karianoot.engine.TimeStretch.stretch(it.samples, opt.speed, q.sampleRate))
+                    }
             }
         }
         val g = loadG2p(onStage)
