@@ -26,6 +26,7 @@ tasks.test {
     environment("KARIANOOT_GOLDEN", System.getenv("KARIANOOT_GOLDEN") ?: "")
     environment("KARIANOOT_QWEN", System.getenv("KARIANOOT_QWEN") ?: "")
     environment("KARIANOOT_STRETCH", System.getenv("KARIANOOT_STRETCH") ?: "")
+    environment("KARIANOOT_JOIN", System.getenv("KARIANOOT_JOIN") ?: "")
     (project.findProperty("karianoot.qwenjni") as String?)?.let { systemProperty("karianoot.qwenjni", it) }
     testLogging { events("passed", "failed", "standard_out", "standard_error"); showStandardStreams = true }
     maxHeapSize = "6g"

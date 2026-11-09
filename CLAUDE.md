@@ -31,8 +31,11 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 ## Notes (Nov 2026)
 - Numbers: `HebrewNumbers.kt` is a port of `hebrew-num2words` (golden: `tools/numbers_golden.py` → test resources);
   `HebrewG2P.phonemize` runs it first, like RenikudPlus.
-- `BlueTts.Options.perSentence` (default on): pieces of 2-3 sentences (`CHUNK_CHARS` 130) with 25 ms fades; as accurate as
-  one sentence at a time (ASR), fewer audible joins. `Options.temperature` = liveliness (Namer 1.1, picked by ear).
+- `BlueTts.Options.perSentence` (default on): pieces of 2-3 sentences (`CHUNK_CHARS` 130); as accurate as
+  one sentence at a time (ASR), fewer audible joins.
+- `Joiner.kt` joins pieces (user: joins sounded "stop and go"): trims silent edges (4 ms fades; the old 25 ms fades clipped
+  Blue, which starts/ends right on the speech), sets every sentence pause (inside pieces and at joins) to one length =
+  the voice's own median (Blue ~0.1 s, Qwen ~0.3-0.45 s) or the slider ("טבעית" = 0), evens loudness ±3 dB. Same ASR. `Options.temperature` = liveliness (Namer 1.1, picked by ear).
 - `TextPrep.kt`: football text cleanup before G2P (1X2, handicap minus, scores vs times, ת"א etc., Latin acronyms
   -> Hebrew letter names with niqqud). Runs after the user's pronunciation fixes.
 - Voice picker page (artifact FxyMdtTTTA4sxxSno8SZtU, db collection `picks`): the user's choices per round.

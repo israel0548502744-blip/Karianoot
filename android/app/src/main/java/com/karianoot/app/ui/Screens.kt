@@ -182,8 +182,9 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var alive by remember(voice?.id) { mutableFloatStateOf(voice?.liveliness ?: 1f) }
     var speed by remember { mutableFloatStateOf(1.0f) }
     var quality by remember { mutableStateOf(1) } // 0 fast, 1 good, 2 best
-    var pause by remember { mutableFloatStateOf(prefs.getFloat("pause", 0.15f)) }
-    LaunchedEffect(pause) { prefs.edit().putFloat("pause", pause).apply() }
+    // 0 = the voice's own pause at every sentence end (Joiner); otherwise that many seconds everywhere.
+    var pause by remember { mutableFloatStateOf(prefs.getFloat("pause2", 0f)) }
+    LaunchedEffect(pause) { prefs.edit().putFloat("pause2", pause).apply() }
     val busy = job.busy
     val last = job.result
     val g2pReady = states["g2p"] == ModelState.Ready
@@ -274,7 +275,9 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             val isQwen = voice?.modelId == Catalog.qwen.id
             LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
             if (isQwen) Text("ב-Qwen הרגש והאיכות נקבעים לבד; המהירות משנה רק את הקצב, לא את גובה הקול.", color = C.Faint, fontSize = 12.sp)
-            LabeledSlider("הפסקה בין משפטים", "%.2f שנ׳".format(pause), pause, 0f..0.8f) { pause = it }
+            LabeledSlider("הפסקה בין משפטים", if (pause < 0.05f) "טבעית" else "%.2f שנ׳".format(pause), pause, 0f..0.8f) {
+                pause = if (it < 0.05f) 0f else it
+            }
             if (!isQwen) {
                 LabeledSlider("חיות (פחות רובוטי)", "%.1f".format(alive), alive, 0.8f..1.5f) { alive = it }
                 Text("איכות", color = C.Sub, fontSize = 14.sp)

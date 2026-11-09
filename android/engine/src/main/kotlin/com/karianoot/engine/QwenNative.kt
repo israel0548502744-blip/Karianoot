@@ -73,13 +73,16 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
     fun synthesizeParts(text: String, voice: FloatArray, temperature: Float = 0f, onProgress: (Float) -> Unit = {}): List<BlueTts.Part> {
         val pieces = BlueTts.chunkText(BlueTts.stripEmoji(text), BlueTts.CHUNK_CHARS)
         return pieces.mapIndexed { i, piece ->
-            BlueTts.Part(piece, BlueTts.fadeEdges(speakIpa(ipa(piece), voice, temperature), sampleRate)).also { onProgress((i + 1f) / pieces.size) }
+            BlueTts.Part(piece, speakIpa(ipa(piece), voice, temperature)).also { onProgress((i + 1f) / pieces.size) }
         }
     }
 
     override fun close() = QwenNative.free(h)
 
     companion object {
+        /** Qwen's own pause at a sentence end (~0.4 s measured), when a text has none to measure. */
+        const val NATURAL_PAUSE = 0.4f
+
         /**
          * Frame budget for a piece: speech runs ~13 IPA characters per second and Qwen makes 12.5 frames per
          * second, so about 1 frame per character; twice that plus 3 seconds is generous but bounded.

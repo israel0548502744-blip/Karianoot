@@ -145,7 +145,7 @@ class BlueTts(
     /** Hebrew text -> audio samples (mono float, [sampleRate] Hz). */
     fun synthesize(text: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
                    onProgress: (Float) -> Unit = {}): FloatArray =
-        join(synthesizeParts(text, voice, opt, noise, onProgress).map { it.samples }, opt)
+        join(synthesizeParts(text, voice, opt, noise, onProgress), opt)
 
     /** One spoken piece of the text (a sentence, or a few short ones). */
     class Part(val text: String, val samples: FloatArray)
@@ -159,19 +159,14 @@ class BlueTts(
         val pieces = chunkText(stripEmoji(text), if (opt.perSentence) CHUNK_CHARS else 220)
         return pieces.mapIndexed { i, piece ->
             val ipa = if (piece.any { it.code in 0x0590..0x05FF }) fixIpa(g2p!!.phonemize(piece)) else piece
-            Part(piece, fadeEdges(infer(ipa.replace(Regex("\\s+"), " ").trim(), voice, opt, noise).first, sampleRate))
+            Part(piece, infer(ipa.replace(Regex("\\s+"), " ").trim(), voice, opt, noise).first)
                 .also { onProgress((i + 1f) / pieces.size) }
         }
     }
 
-    /** Parts -> one recording, with [Options.silence] between them and the peak limit. */
-    fun join(parts: List<FloatArray>, opt: Options): FloatArray {
-        val gap = (opt.silence * sampleRate).toInt()
-        val out = FloatArray(parts.sumOf { it.size } + gap * maxOf(0, parts.size - 1))
-        var p = 0
-        parts.forEachIndexed { i, a -> if (i > 0) p += gap; a.copyInto(out, p); p += a.size }
-        return opt.peakLimit?.let { Wav.limitPeak(out, it) } ?: out
-    }
+    /** Parts -> one recording ([Joiner]: even sentence pauses, [Options.silence] or the voice's own, and the peak limit). */
+    fun join(parts: List<Part>, opt: Options): FloatArray =
+        Joiner.join(parts.map { it.samples }, parts.map { it.text }, sampleRate, opt.silence, NATURAL_PAUSE, opt.peakLimit).samples
 
     fun synthesizePhonemes(ipa: String, voice: BlueVoice, opt: Options = Options(), noise: Noise = gaussian(),
                            onProgress: (Float) -> Unit = {}): FloatArray {
@@ -327,6 +322,9 @@ class BlueTts(
          * fewer joins sound less "stop-and-go" (the user's note).
          */
         const val CHUNK_CHARS = 130
+
+        /** Blue's own pause at a sentence end (~0.1 s measured inside pieces), when a text has none to measure. */
+        const val NATURAL_PAUSE = 0.1f
 
         /** 25 ms fade in/out so joined pieces don't click (as the original LightBlue code did). */
         fun fadeEdges(w: FloatArray, rate: Int, ms: Int = 25): FloatArray {

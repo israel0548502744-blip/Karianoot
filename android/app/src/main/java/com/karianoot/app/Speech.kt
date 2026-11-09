@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import com.karianoot.engine.BlueTts
 import com.karianoot.engine.BlueVoice
 import com.karianoot.engine.HebrewG2P
+import com.karianoot.engine.Joiner
 import com.karianoot.engine.Pronounce
 import com.karianoot.engine.QwenTts
 import com.karianoot.engine.TextPrep
@@ -25,6 +26,8 @@ data class Creation(
     val file: File, val text: String, val voice: String, val seconds: Float, val createdAt: Long, val genSeconds: Float,
     val parts: List<PartSpan> = emptyList(), val voiceId: String = "", val steps: Int = 10, val speed: Float = 1f,
     val temperature: Float = 1f,
+    /** The sentence pause used (seconds), so a retake of one sentence fits back in the same way. */
+    val pause: Float = 0f,
 )
 
 /**
@@ -81,6 +84,8 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     /** One loaded voice, whatever the model: splits the text into pieces and speaks each. */
     private interface Engine {
         val sampleRate: Int
+        /** The model's own sentence pause (seconds), for texts too short to measure it on. */
+        val naturalPause: Float
         /** [retake]: a new, different take (Qwen samples instead of its deterministic greedy pass). */
         fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit = {}, retake: Boolean = false): List<BlueTts.Part>
     }
@@ -110,6 +115,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             val spk = QwenTts.readSpk((voice.customFile ?: assetFile(voice.asset!!)).readBytes())
             return object : Engine {
                 override val sampleRate = q.sampleRate
+                override val naturalPause = QwenTts.NATURAL_PAUSE
                 // Greedy decoding (0 word errors in the tests) gives the same audio every time, so a retake samples
                 // at temperature 0.6, measured as accurate as greedy (ASR, 3 voices x 2 seeds).
                 // Qwen has no speed control: pieces are time-stretched (pitch kept) to the chosen speed.
@@ -135,18 +141,17 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
         return object : Engine {
             override val sampleRate = engine.sampleRate
+            override val naturalPause = BlueTts.NATURAL_PAUSE
             override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) = engine.synthesizeParts(text, v, opt, onProgress = onProgress)
         }
     }
 
-    /** Pieces -> one recording, [BlueTts.Options.silence] apart, peak-limited. */
-    private fun join(parts: List<FloatArray>, opt: BlueTts.Options, rate: Int): FloatArray {
-        val gap = (opt.silence * rate).toInt()
-        val out = FloatArray(parts.sumOf { it.size } + gap * maxOf(0, parts.size - 1))
-        var p = 0
-        parts.forEachIndexed { i, a -> if (i > 0) p += gap; a.copyInto(out, p); p += a.size }
-        return Wav.limitPeak(out)
-    }
+    /**
+     * Pieces -> one recording ([Joiner]): every sentence pause the same ([BlueTts.Options.silence], or the voice's
+     * own when 0), edges trimmed without clipping, loudness evened out, peak-limited.
+     */
+    private fun join(parts: List<BlueTts.Part>, pause: Float, engine: Engine) =
+        Joiner.join(parts.map { it.samples }, parts.map { it.text }, engine.sampleRate, pause, engine.naturalPause)
 
     /** A Qwen voice print from a recording (44.1 kHz mono), for "make a voice from a recording". */
     suspend fun qwenVoicePrint(wav44k: FloatArray): FloatArray = withContext(Dispatchers.Default) {
@@ -165,17 +170,13 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 stage("מקריא…", 0.02f)
                 // The user's fixes first (they win), then the football-text cleanup (1X2, PSG, ת"א, scores).
                 val parts = engine.parts(TextPrep.apply(Pronounce.apply(text, fixes())), opt, onProgress = { p -> stage("מקריא…", p) })
-                val wav = join(parts.map { it.samples }, opt, engine.sampleRate)
-                val gap = (opt.silence * engine.sampleRate).toInt()
-                var pos = 0
-                val spans = parts.mapIndexed { i, p ->
-                    if (i > 0) pos += gap
-                    PartSpan(p.text, pos, pos + p.samples.size).also { pos += p.samples.size }
-                }
+                val joined = join(parts, opt.silence, engine)
+                val wav = joined.samples
+                val spans = parts.mapIndexed { i, p -> PartSpan(p.text, joined.spans[i][0], joined.spans[i][1]) }
                 val f = File(creationsDir, "karianoot_${System.currentTimeMillis()}.wav")
                 Wav.write(f, wav, engine.sampleRate)
                 val c = Creation(f, text, label(voice), wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
-                    ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed, opt.temperature)
+                    ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed, opt.temperature, joined.pauseSeconds)
                 save(listOf(c) + history())
                 recordSpeed(voice.modelId, c.genSeconds, c.seconds)
                 c
@@ -184,13 +185,13 @@ class Speech(private val ctx: Context, private val models: Models, private val f
 
     /** A short sample of [voice] (cached per voice), to choose voices by ear. */
     suspend fun preview(voice: VoiceInfo): File = withContext(Dispatchers.Default) {
-        val f = File(ctx.cacheDir, "preview_${voice.id}.wav")
+        val f = File(ctx.cacheDir, "preview2_${voice.id}.wav")
         if (f.exists() && f.length() > 1000) return@withContext f
         lock.withLock {
             val engine = engineFor(voice) { _, _ -> }
             val opt = BlueTts.Options(steps = voice.steps[1], temperature = voice.liveliness)
             val parts = engine.parts(PREVIEW_TEXT, opt)
-            Wav.write(f, join(parts.map { it.samples }, opt, engine.sampleRate), engine.sampleRate)
+            Wav.write(f, join(parts, 0f, engine).samples, engine.sampleRate)
         }
         f
     }
@@ -202,8 +203,16 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val engine = engineFor(voice) { _, _ -> }
                 val span = c.parts[i]
                 val opt = BlueTts.Options(steps = c.steps, speed = c.speed, perSentence = false, peakLimit = null, temperature = c.temperature)
-                val fresh = Wav.limitPeak(engine.parts(span.text, opt, retake = true).flatMap { it.samples.asList() }.toFloatArray())
                 val (old, rate) = Wav.read(c.file)
+                // The retake gets the same sentence pauses as the recording and the loudness of the take it replaces.
+                val ps = engine.parts(span.text, opt, retake = true)
+                var fresh = Joiner.join(ps.map { it.samples }, ps.map { it.text }, rate, c.pause, engine.naturalPause).samples
+                val target = Joiner.level(old.copyOfRange(span.start.coerceIn(0, old.size), span.end.coerceIn(0, old.size)), rate)
+                val now = Joiner.level(fresh, rate)
+                if (target > 0 && now > 0) {
+                    val g = (target / now).toFloat().coerceIn(0.71f, 1.41f)
+                    fresh = Wav.limitPeak(FloatArray(fresh.size) { fresh[it] * g })
+                }
                 val out = FloatArray(old.size - (span.end - span.start) + fresh.size)
                 old.copyInto(out, 0, 0, span.start)
                 fresh.copyInto(out, span.start)
@@ -246,7 +255,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 o.getDouble("seconds").toFloat(), o.getLong("at"), o.optDouble("gen", 0.0).toFloat(),
                 o.optJSONArray("parts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }
                     .map { PartSpan(it.getString("t"), it.getInt("s"), it.getInt("e")) } } ?: emptyList(),
-                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat(), o.optDouble("temp", 1.0).toFloat())
+                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat(), o.optDouble("temp", 1.0).toFloat(), o.optDouble("pause", 0.0).toFloat())
         }
     }.getOrDefault(emptyList())
 
@@ -259,7 +268,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         val a = JSONArray()
         for (c in list) a.put(JSONObject().put("file", c.file.name).put("text", c.text).put("voice", c.voice)
             .put("seconds", c.seconds.toDouble()).put("at", c.createdAt).put("gen", c.genSeconds.toDouble())
-            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble()).put("temp", c.temperature.toDouble())
+            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble()).put("temp", c.temperature.toDouble()).put("pause", c.pause.toDouble())
             .put("parts", JSONArray().also { pa -> c.parts.forEach { pa.put(JSONObject().put("t", it.text).put("s", it.start).put("e", it.end)) } }))
         index.writeText(a.toString())
     }
