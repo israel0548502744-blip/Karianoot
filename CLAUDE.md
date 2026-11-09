@@ -61,6 +61,10 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Qwen measurements (Nov 9): whole passage in one pass drops the end -> keep 130-char pieces; sampling (0.3-0.9) is as
   accurate as greedy (ASR ~1% CER on number-free sentences), so retakes sample at 0.6 (greedy repeats itself).
 
+- Magpie Hebrew (notmax123/magpie_tts_multilingual_357m-he, NVIDIA Open Model License = commercial OK; 357M, 15 baked
+  Hebrew voices, IPA in, no cloning): probing quality with NeMo on CPU (`magpie-probe.yml`, needs a CUDA->CPU shim).
+  Phone path if good: github.com/mudler/magpie-tts.cpp (MIT, ggml, C API `magpie_tts.h`, ~realtime on aarch64 CPU per its
+  benchmarks); the Hebrew ckpt would need converting (extra char tokenizer + 20 baked speakers).
 - Qwen + punctuation (`qwen-energy.yml`, Nov 9): "!!" at sentence ends sometimes raises pitch movement/range (one piece
   4.2 -> 5.8 st), often no change; "," before key words no effect; CER unchanged. Not built in; samples in picker round r11.
 
