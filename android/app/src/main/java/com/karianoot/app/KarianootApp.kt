@@ -59,11 +59,13 @@ class KarianootApp : Application() {
     /** Making a voice from a recording; null when idle, otherwise a status line. */
     val cloning = MutableStateFlow<String?>(null)
 
-    fun createVoice(name: String, uri: android.net.Uri, personalOnly: Boolean, done: (String) -> Unit) {
+    fun createVoice(name: String, uri: android.net.Uri, personalOnly: Boolean, female: Boolean, done: (String) -> Unit) {
         if (cloning.value != null) return
         cloning.value = "מכין את הקול…"
         scope.launch {
-            val msg = runCatching { voices.create(name, uri, personalOnly) }
+            val qwenPrint: ((FloatArray) -> FloatArray)? = if (models.isReady(Catalog.qwen.id))
+                { wav -> kotlinx.coroutines.runBlocking { speech.qwenVoicePrint(wav) } } else null
+            val msg = runCatching { voices.create(name, uri, personalOnly, female, qwenPrint) }
                 .fold({ "הקול \"${it.name}\" מוכן ✨" }, { "לא הצלחתי ליצור את הקול: ${it.message}" })
             cloning.value = null
             kotlinx.coroutines.withContext(Dispatchers.Main) { done(msg) }

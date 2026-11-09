@@ -7,6 +7,7 @@ import com.karianoot.engine.BlueTts
 import com.karianoot.engine.BlueVoice
 import com.karianoot.engine.HebrewG2P
 import com.karianoot.engine.Pronounce
+import com.karianoot.engine.QwenTts
 import com.karianoot.engine.Wav
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -38,34 +39,85 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     val creationsDir = File(ctx.getExternalFilesDir(null), "creations").apply { mkdirs() }
     private val index = File(creationsDir, "index.json")
 
-    /** Loads (or reuses) the engine for [voice] and its style. Call under [lock]. */
-    private fun engineFor(voice: VoiceInfo, onStage: (String, Float) -> Unit): Pair<BlueTts, BlueVoice> {
+    private var qwen: QwenTts? = null
+
+    /** One loaded voice, whatever the model: splits the text into pieces and speaks each. */
+    private interface Engine {
+        val sampleRate: Int
+        fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit = {}): List<BlueTts.Part>
+    }
+
+    private fun loadG2p(onStage: (String, Float) -> Unit): HebrewG2P {
         if (g2p == null) {
             onStage("טוען את מנוע ההגייה…", 0f)
             g2p = HebrewG2P(File(models.dir(Catalog.g2p), "model_int8.onnx").path)
         }
+        return g2p!!
+    }
+
+    private fun loadQwen(onStage: (String, Float) -> Unit): QwenTts {
+        val g = loadG2p(onStage)
+        qwen?.let { return it }
+        onStage("טוען את Qwen (כמה שניות)…", 0f)
+        tts?.close(); tts = null; ttsModel = null   // one big model in memory at a time
+        val dir = models.dir(Catalog.qwen)
+        return QwenTts(File(dir, "qwen-talker-1.7b-base-Q4_K_M.gguf").path, File(dir, "qwen-tokenizer-12hz-Q4_K_M.gguf").path, g,
+            threads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)).also { qwen = it }
+    }
+
+    /** Loads (or reuses) the engine for [voice] and its style. Call under [lock]. */
+    private fun engineFor(voice: VoiceInfo, onStage: (String, Float) -> Unit): Engine {
+        if (voice.modelId == Catalog.qwen.id) {
+            val q = loadQwen(onStage)
+            val spk = QwenTts.readSpk((voice.customFile ?: assetFile(voice.asset!!)).readBytes())
+            return object : Engine {
+                override val sampleRate = q.sampleRate
+                // Greedy decoding: the setting that scored 0 word errors in the tests.
+                override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit) = q.synthesizeParts(text, spk, 0f, onProgress)
+            }
+        }
+        val g = loadG2p(onStage)
+        qwen?.close(); qwen = null
         // Voices made from a recording take their duration from Blue 2.5's z_ref predictor.
         val dpRef = File(models.dir(Catalog.clone), "duration_predictor.onnx").takeIf { voice.modelId == "blue_25" && it.length() == 2_151_232L }
         val key = voice.modelId + (if (dpRef != null) "+ref" else "")
         if (ttsModel != key) {
             onStage("טוען את הקול…", 0f)
             tts?.close(); tts = null; ttsModel = null
-            tts = BlueTts(models.dir(Catalog.model(voice.modelId)), g2p, dpRef)
+            tts = BlueTts(models.dir(Catalog.model(voice.modelId)), g, dpRef)
             ttsModel = key
         }
+        val engine = tts!!
         val v = BlueVoice.load(voice.customFile ?: voice.asset?.let { assetFile(it) }
             ?: File(models.dir(Catalog.model(voice.modelId)), voice.file))
-        return tts!! to v
+        return object : Engine {
+            override val sampleRate = engine.sampleRate
+            override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit) = engine.synthesizeParts(text, v, opt, onProgress = onProgress)
+        }
+    }
+
+    /** Pieces -> one recording, [BlueTts.Options.silence] apart, peak-limited. */
+    private fun join(parts: List<FloatArray>, opt: BlueTts.Options, rate: Int): FloatArray {
+        val gap = (opt.silence * rate).toInt()
+        val out = FloatArray(parts.sumOf { it.size } + gap * maxOf(0, parts.size - 1))
+        var p = 0
+        parts.forEachIndexed { i, a -> if (i > 0) p += gap; a.copyInto(out, p); p += a.size }
+        return Wav.limitPeak(out)
+    }
+
+    /** A Qwen voice print from a recording (44.1 kHz mono), for "make a voice from a recording". */
+    suspend fun qwenVoicePrint(wav44k: FloatArray): FloatArray = withContext(Dispatchers.Default) {
+        lock.withLock { loadQwen { _, _ -> }.voicePrint(com.karianoot.engine.VoiceCloner.resample(wav44k, 44100, 24000)) }
     }
 
     suspend fun speak(text: String, voice: VoiceInfo, opt: BlueTts.Options, onStage: (String, Float) -> Unit): Creation =
         withContext(Dispatchers.Default) {
             lock.withLock {
                 val t0 = System.nanoTime()
-                val (engine, v) = engineFor(voice, onStage)
+                val engine = engineFor(voice, onStage)
                 onStage("מקריא…", 0.02f)
-                val parts = engine.synthesizeParts(Pronounce.apply(text, fixes()), v, opt) { p -> onStage("מקריא…", p) }
-                val wav = engine.join(parts.map { it.samples }, opt)
+                val parts = engine.parts(Pronounce.apply(text, fixes()), opt) { p -> onStage("מקריא…", p) }
+                val wav = join(parts.map { it.samples }, opt, engine.sampleRate)
                 val gap = (opt.silence * engine.sampleRate).toInt()
                 var pos = 0
                 val spans = parts.mapIndexed { i, p ->
@@ -81,14 +133,14 @@ class Speech(private val ctx: Context, private val models: Models, private val f
             }
         }
 
-    /** Makes sentence [i] of [c] again (a new random take) and splices it into the recording. */
+    /** Makes sentence [i] of [c] again (a new take) and splices it into the recording. */
     suspend fun redoPart(c: Creation, i: Int, voice: VoiceInfo): Creation =
         withContext(Dispatchers.Default) {
             lock.withLock {
-                val (engine, v) = engineFor(voice) { _, _ -> }
+                val engine = engineFor(voice) { _, _ -> }
                 val span = c.parts[i]
                 val opt = BlueTts.Options(steps = c.steps, speed = c.speed, perSentence = false, peakLimit = null, temperature = c.temperature)
-                val fresh = Wav.limitPeak(engine.synthesizeParts(span.text, v, opt).flatMap { it.samples.asList() }.toFloatArray())
+                val fresh = Wav.limitPeak(engine.parts(span.text, opt).flatMap { it.samples.asList() }.toFloatArray())
                 val (old, rate) = Wav.read(c.file)
                 val out = FloatArray(old.size - (span.end - span.start) + fresh.size)
                 old.copyInto(out, 0, 0, span.start)
@@ -164,5 +216,5 @@ class Speech(private val ctx: Context, private val models: Models, private val f
 
     companion object { const val KEEP = 30 }
 
-    fun release() { tts?.close(); g2p?.close(); tts = null; g2p = null; ttsModel = null }
+    fun release() { tts?.close(); qwen?.close(); g2p?.close(); tts = null; qwen = null; g2p = null; ttsModel = null }
 }

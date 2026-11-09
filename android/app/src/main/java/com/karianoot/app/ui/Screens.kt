@@ -172,6 +172,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val custom by app.voices.custom.collectAsState()
     val cloning by app.cloning.collectAsState()
     var newVoice by remember { mutableStateOf(false) }
+    var gender by remember { mutableStateOf(0) } // 0 all, 1 men, 2 women
     var fixesOpen by remember { mutableStateOf(false) }
     val fixes by app.pronounce.list.collectAsState()
     val ready = (Catalog.voices + custom).filter { v -> v.needs.all { states[it] == ModelState.Ready } }
@@ -225,13 +226,26 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         }
 
         Section(Modifier.enter(3), title = "קול") {
-            if (ready.isEmpty()) Text("אין עדיין קולות מותקנים.", color = C.Faint, fontSize = 14.sp)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                for (v in ready) VoiceChip(v, v.id == voice?.id) { voiceId = v.id }
-                NewVoiceChip(cloning) { newVoice = true }
+            Segmented(listOf("הכל", "גברים", "נשים"), gender) { gender = it }
+            val shown = (Catalog.voices + custom).filter { gender == 0 || (gender == 1 && !it.female) || (gender == 2 && it.female) }
+            for (g in VOICE_GROUPS) {
+                val inGroup = shown.filter(g.match)
+                if (inGroup.isEmpty() && !g.mine) continue
+                val readyIn = inGroup.filter { v -> v.needs.all { states[it] == ModelState.Ready } }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(g.title, color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(g.subtitle, color = C.Faint, fontSize = 12.sp)
+                    }
+                    if (readyIn.isEmpty() && !g.mine) {
+                        SoftButton(g.missing, Modifier.fillMaxWidth(), icon = Icons.Rounded.Download, onClick = openModels)
+                    } else Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (v in readyIn) VoiceChip(v, v.id == voice?.id) { voiceId = v.id }
+                        if (g.mine) NewVoiceChip(cloning) { newVoice = true }
+                    }
+                }
             }
-            if (states["blue_25"] == ModelState.Ready && states["clone"] != ModelState.Ready)
-                Text("רוצים גם את \"נמר\" (שדרן כדורגל)? מורידים את \"ערכת קול מהקלטה\" במסך המודלים.", color = C.Faint, fontSize = 12.sp)
             if (voice?.personalOnly == true) Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.WarningAmber, null, tint = C.Amber, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -240,11 +254,15 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         }
 
         Section(Modifier.enter(4), title = "כיוונון") {
-            LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
+            val isQwen = voice?.modelId == Catalog.qwen.id
+            if (isQwen) Text("ב-Qwen הקצב, הרגש והאיכות נקבעים לבד. אפשר לכוון רק את ההפסקה בין משפטים.", color = C.Faint, fontSize = 12.sp)
+            else LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
             LabeledSlider("הפסקה בין משפטים", "%.2f שנ׳".format(pause), pause, 0f..0.8f) { pause = it }
-            LabeledSlider("חיות (פחות רובוטי)", "%.1f".format(alive), alive, 0.8f..1.5f) { alive = it }
-            Text("איכות", color = C.Sub, fontSize = 14.sp)
-            Segmented(listOf("מהיר", "איכותי", "מקסימום"), quality) { quality = it }
+            if (!isQwen) {
+                LabeledSlider("חיות (פחות רובוטי)", "%.1f".format(alive), alive, 0.8f..1.5f) { alive = it }
+                Text("איכות", color = C.Sub, fontSize = 14.sp)
+                Segmented(listOf("מהיר", "איכותי", "מקסימום"), quality) { quality = it }
+            }
             SoftButton(if (fixes.isEmpty()) "תיקוני הגייה" else "תיקוני הגייה (${fixes.size})", Modifier.fillMaxWidth(),
                 icon = Icons.Rounded.RecordVoiceOver) { fixesOpen = true }
         }
@@ -355,6 +373,7 @@ private fun NewVoiceDialog(app: KarianootApp, states: Map<String, ModelState>, o
     var name by remember { mutableStateOf("") }
     var uri by remember { mutableStateOf<android.net.Uri?>(null) }
     var ownVoice by remember { mutableStateOf(false) }
+    var female by remember { mutableStateOf(0) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri = it }
     val kitReady = states["clone"] == ModelState.Ready && states["blue_25"] == ModelState.Ready
     AlertDialog(
@@ -368,13 +387,16 @@ private fun NewVoiceDialog(app: KarianootApp, states: Map<String, ModelState>, o
                     return@Column
                 }
                 Text("בוחרים הקלטה של 10 שניות ומעלה: דיבור ברור, בלי מוזיקה. הקול החדש ידבר בסגנון של ההקלטה. " +
-                    "ההקלטה נשארת בטלפון ולא נשלחת לשום מקום.", color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
+                    "ההקלטה נשארת בטלפון ולא נשלחת לשום מקום." +
+                    (if (states["qwen_he"] == ModelState.Ready) " נוצרות שתי גרסאות: Blue (מהירה) ו-Qwen (הכי טבעית)." else ""),
+                    color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x55000000))
                     .border(1.dp, C.Stroke, RoundedCornerShape(14.dp)).padding(12.dp)) {
                     if (name.isEmpty()) Text("שם הקול (למשל: נמר)", color = C.Faint)
                     BasicTextField(name, { name = it }, Modifier.fillMaxWidth(),
                         textStyle = TextStyle(color = C.Text, fontSize = 16.sp, fontFamily = Rubik), cursorBrush = SolidColor(C.Gold), singleLine = true)
                 }
+                Segmented(listOf("קול של גבר", "קול של אישה"), female) { female = it }
                 SoftButton(if (uri == null) "בחירת קובץ הקלטה" else "✓ נבחר קובץ (להחלפה)", Modifier.fillMaxWidth(), icon = Icons.Rounded.AudioFile) {
                     pick.launch(arrayOf("audio/*"))
                 }
@@ -389,7 +411,7 @@ private fun NewVoiceDialog(app: KarianootApp, states: Map<String, ModelState>, o
         confirmButton = {
             if (!kitReady) SoftButton("למסך המודלים", onClick = openModels)
             else SoftButton("צור קול", enabled = uri != null, color = C.Gold) {
-                app.createVoice(name, uri!!, personalOnly = !ownVoice) { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
+                app.createVoice(name, uri!!, personalOnly = !ownVoice, female = female == 1) { Toast.makeText(ctx, it, Toast.LENGTH_LONG).show() }
                 close()
             }
         },
@@ -609,7 +631,7 @@ fun AboutScreen(app: KarianootApp) {
             Text("ONNX Runtime — Microsoft, רישיון MIT", color = C.Sub, fontSize = 13.sp)
             Text("גופן Rubik — רישיון SIL Open Font License", color = C.Sub, fontSize = 13.sp)
         }
-        val personal = (Catalog.voices + custom).filter { it.personalOnly }
+        val personal = (Catalog.voices + custom).filter { it.personalOnly }.distinctBy { it.name }
         if (personal.isNotEmpty()) Section(title = "⚠ קולות לשימוש אישי בלבד") {
             Text("הקולות האלה נוצרו מהקלטות שזכויות הקול בהן לא ברורות (למשל קול מ-ElevenLabs). " +
                 "מותר להשתמש בהם רק באופן אישי. אם האפליקציה תימכר, צריך למחוק אותם ולא לכלול אותם בה.",
@@ -619,3 +641,13 @@ fun AboutScreen(app: KarianootApp) {
         Spacer(Modifier.height(20.dp))
     }
 }
+
+/** How the voice picker is grouped: by model, best first; the user's own voices last. */
+private class VoiceGroup(val title: String, val subtitle: String, val missing: String, val mine: Boolean = false, val match: (VoiceInfo) -> Boolean)
+
+private val VOICE_GROUPS = listOf(
+    VoiceGroup("Qwen", "הכי טבעי וחי · איטי יותר", "להורדת Qwen (1.5GB) במסך המודלים") { it.modelId == "qwen_he" && it.customFile == null },
+    VoiceGroup("Blue 2.5", "מהיר", "להורדת Blue 2.5 במסך המודלים") { it.modelId == "blue_25" && it.customFile == null },
+    VoiceGroup("Blue V3", "רועי ורותם", "להורדת Blue V3 במסך המודלים") { it.modelId == "blue_v3" && it.customFile == null },
+    VoiceGroup("הקולות שלי", "מהקלטות", "", mine = true) { it.customFile != null },
+)

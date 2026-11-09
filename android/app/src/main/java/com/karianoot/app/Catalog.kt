@@ -3,7 +3,7 @@ package com.karianoot.app
 /** One file of a model, pinned to an exact Hugging Face revision. */
 data class ModelFile(val path: String, val size: Long, val repo: String? = null, val revision: String? = null)
 
-enum class ModelKind { G2P, BLUE, CLONE, SOON }
+enum class ModelKind { G2P, BLUE, CLONE, QWEN, SOON }
 
 data class ModelInfo(
     val id: String,
@@ -100,6 +100,22 @@ object Catalog {
         ),
     )
 
+    /**
+     * QwenTTS-he: a large language-model voice (Qwen3-TTS + a Hebrew adapter), cloned from short reference clips.
+     * The most natural voices, slower than Blue. Runs on qwentts.cpp (MIT) through libqwenjni.
+     */
+    val qwen = ModelInfo(
+        id = "qwen_he", kind = ModelKind.QWEN,
+        title = "Qwen עברית",
+        subtitle = "הקולות הכי טבעיים וחיים. איטי יותר מ-Blue (בערך דקה לקריינות של 20 שניות).",
+        repo = "notmax123/QwenTTS-he-1.7B-GGUF", revision = "2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9",
+        license = "Apache-2.0", credit = "QwenTTS-he — Max Melichov (notmax123); Qwen3-TTS — Alibaba Qwen; qwentts.cpp (MIT)",
+        files = listOf(
+            ModelFile("qwen-talker-1.7b-base-Q4_K_M.gguf", 1_219_245_248),
+            ModelFile("qwen-tokenizer-12hz-Q4_K_M.gguf", 254_974_752),
+        ),
+    )
+
     /** Shown as "coming soon" so the plan is visible inside the app. */
     val soon = listOf(
         ModelInfo("noa", "נועה (Piper)", "קול נשי מהיר מאוד.", ModelKind.SOON, license = "CC BY 4.0", credit = "thewh1teagle"),
@@ -108,10 +124,21 @@ object Catalog {
         ModelInfo("orpheus", "Orpheus עברית", "מודל גדול (3B), ניסיוני, ירוץ על ה-NPU.", ModelKind.SOON, license = "לבדיקה", credit = "Canopy Labs"),
     )
 
-    val downloadable = listOf(g2p, blue25, blueV3, clone)
+    val downloadable = listOf(g2p, qwen, blue25, blueV3, clone)
     val all = downloadable + soon
 
+    private fun q(id: String, name: String, note: String, female: Boolean, personal: Boolean = false) =
+        VoiceInfo("q_$id", "qwen_he", "", name, note, female, personalOnly = personal,
+            asset = "qwen/q_$id.spk", needs = listOf("g2p", "qwen_he"))
+
     val voices = listOf(
+        q("male2", "גברי 2", "Qwen", female = false),
+        q("tet", "גברי ט", "Qwen", female = false),
+        q("het", "גברי ח", "Qwen", female = false),
+        q("male1", "גברי 1", "Qwen", female = false),
+        q("female", "נשי", "Qwen", female = true),
+        q("gimel", "נשי ג", "Qwen", female = true),
+        q("namer", "נמר", "שדרן · Qwen", female = false, personal = true),
         VoiceInfo("25_female", "blue_25", "voices/female.json", "נשי", "2.5", female = true),
         VoiceInfo("25_m6209", "blue_25", "voices/libri_male_6209.json", "גברי 1", "2.5", female = false),
         VoiceInfo("25_m8088", "blue_25", "voices/libri_male_8088.json", "גברי 2", "2.5", female = false),
@@ -120,7 +147,7 @@ object Catalog {
         VoiceInfo("v3_roi", "blue_v3", "voices/Roi.json", "רועי", "גברי · V3", female = false),
         VoiceInfo("v3_rotem", "blue_v3", "voices/Rotem.json", "רותם", "נשי · V3", female = true),
         // Made from the owner's ElevenLabs clips (tools/namer.py): personal use only, see assets/voices/README.md.
-        VoiceInfo("namer", "blue_25", "", "נמר", "שדרן", female = false, personalOnly = true,
+        VoiceInfo("namer", "blue_25", "", "נמר", "שדרן · 2.5", female = false, personalOnly = true,
             asset = "voices/namer.json", needs = listOf("blue_25", "clone"), liveliness = 1.1f),
     )
 

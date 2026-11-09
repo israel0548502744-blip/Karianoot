@@ -4,3 +4,5 @@ android/*/build/
 android/local.properties
 *.iml
 .idea/
+android/qwen/build/
+android/app/src/main/jniLibs/

@@ -60,6 +60,11 @@ class ScreenshotTest {
 
     @Test fun about() = shot("5_about", Tab.About)
 
+    @Test fun studioWithQwen() {
+        install(Catalog.g2p, Catalog.qwen, Catalog.blue25, Catalog.clone)
+        shot("7_studio_qwen", Tab.Studio, "ערב טוב לכל האוהדים! הערב יש לנו משחק ענק, והיחס פשוט מטורף.")
+    }
+
     @Test fun libraryWithRecording() {
         val dir = File(ctx.getExternalFilesDir(null), "creations").apply { mkdirs() }
         com.karianoot.engine.Wav.write(File(dir, "demo.wav"), FloatArray(44100 * 3), 44100)
