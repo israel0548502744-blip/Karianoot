@@ -1,0 +1,71 @@
+name: Qwen energy probe
+
+# Does punctuation steer Qwen's energy? Same passage with periods, with exclamation marks, and with a few words
+# stressed by punctuation, in 3 voices (greedy). Pitch/loudness movement and ASR are scored offline.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-energy.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  energy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build qwentts.cpp (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts -j 4 2>&1 | tail -1
+      - name: Model and pieces
+        run: |
+          pip install -q huggingface_hub soundfile numpy "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir q --include "*.gguf"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          import re, json
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx")
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          P = ["ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה. תסתכלו על היחס, והיחס פה פשוט מטורף.",
+               "אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות. מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!"]
+          V = {"base": P,
+               "bang": [re.sub(r"\.", "!", p) for p in P],
+               "bang2": [re.sub(r"[.!]", "!!", p) for p in P],
+               "comma": [p.replace("משחק ענק", "משחק, ענק").replace("פשוט מטורף", "פשוט, מטורף").replace("זה הזמן", "זה, הזמן") for p in P]}
+          plan = {}
+          for k, ps in V.items():
+              for i, p in enumerate(ps):
+                  ipa = fix(p); open(f"{k}_{i}.txt", "w").write(ipa); plan[f"{k}_{i}"] = {"text": p, "ipa": ipa}
+          json.dump(plan, open("plan.json", "w"), ensure_ascii=False, indent=1); print(json.dumps(plan, ensure_ascii=False, indent=1))
+          PY
+      - name: Render
+        run: |
+          mkdir -p out; B=android/qwen/build/host/qwen-tts; M=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C=q/qwen-tokenizer-12hz-Q4_K_M.gguf
+          for v in d_hype d_commentator male2; do
+            for f in base_*.txt bang_*.txt bang2_*.txt comma_*.txt; do
+              b=${f%.txt}; $B --model $M --codec $C --ref-spk android/app/src/main/assets/qwen/q_$v.spk --lang auto --greedy \
+                 --max-new 600 -o out/${v}_$b.wav < $f > /dev/null 2>&1 || echo "FAIL $v $b"
+            done
+            echo "DONE $v"
+          done
+          cp plan.json out/ && cd out && tar czf ../qwen_energy.tgz *.wav plan.json && cd ..
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f qwen_energy.tgz ] || exit 0
+          gh release delete qwen-energy -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-energy qwen_energy.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Qwen energy probe (for tools)" --notes "QwenTTS-he, same passage with different punctuation. Not the app."
