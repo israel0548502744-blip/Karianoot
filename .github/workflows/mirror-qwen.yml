@@ -1,0 +1,29 @@
+name: Mirror QwenTTS-he GGUF for offline work
+
+# notmax123/QwenTTS-he-1.7B-GGUF (Apache-2.0) into a release, for building voices and testing where HF is blocked.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/mirror-qwen.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q huggingface_hub
+      - run: |
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir q --include "*.gguf"
+          ls -la q && sha256sum q/*.gguf
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete qwen-mirror -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-mirror q/*.gguf -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "QwenTTS-he GGUF mirror (for tools)" --notes "notmax123/QwenTTS-he-1.7B-GGUF @2b01f879 (Apache-2.0). Not the app."
