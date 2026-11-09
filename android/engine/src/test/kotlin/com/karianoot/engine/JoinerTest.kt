@@ -102,9 +102,16 @@ class JoinerTest {
             old.forEachIndexed { i, a -> if (i > 0) p += gap; a.copyInto(o, p); p += a.size }
             val name = list.name.removeSuffix(".txt")
             Wav.write(java.io.File(dir, "${name}_old.wav"), Wav.limitPeak(o), r)
-            val n = Joiner.join(wavs.map { it.first }, rows.map { it[1] }, r, 0f, if (r == 24000) 0.4f else 0.1f)
+            val qwen = r == 24000
+            val n = Joiner.join(wavs.map { it.first }, rows.map { it[1] }, r, 0f, if (qwen) 0.4f else 0.1f,
+                floor = if (qwen) QwenTts.MIN_PAUSE else BlueTts.MIN_PAUSE)
             Wav.write(java.io.File(dir, "${name}_new.wav"), n.samples, r)
             println("CHECK join $name natural pause ${n.pauseSeconds}")
+            // Fixed pauses, to choose by ear.
+            for (sec in listOf(0.11f, 0.3f)) {
+                val f = Joiner.join(wavs.map { it.first }, rows.map { it[1] }, r, sec)
+                Wav.write(java.io.File(dir, "${name}_p${(sec * 100).toInt()}.wav"), f.samples, r)
+            }
         }
     }
 }
