@@ -669,7 +669,12 @@ fun AboutScreen(app: KarianootApp) {
 private class VoiceGroup(val title: String, val subtitle: String, val missing: String, val mine: Boolean = false, val match: (VoiceInfo) -> Boolean)
 
 private val VOICE_GROUPS = listOf(
-    VoiceGroup("Qwen", "הכי טבעי וחי · איטי יותר", "להורדת Qwen (1.5GB) במסך המודלים") { it.modelId == "qwen_he" && it.customFile == null },
+    VoiceGroup("Qwen · שדרנים ומגישים", "הכי טבעי וחי · איטי יותר", "להורדת Qwen (1.5GB) במסך המודלים") {
+        it.modelId == "qwen_he" && it.customFile == null && it.asset?.contains("q_d_") == true
+    },
+    VoiceGroup("Qwen · עוד קולות", "", "להורדת Qwen (1.5GB) במסך המודלים") {
+        it.modelId == "qwen_he" && it.customFile == null && it.asset?.contains("q_d_") != true
+    },
     VoiceGroup("Blue 2.5", "מהיר", "להורדת Blue 2.5 במסך המודלים") { it.modelId == "blue_25" && it.customFile == null },
     VoiceGroup("Blue V3", "רועי ורותם", "להורדת Blue V3 במסך המודלים") { it.modelId == "blue_v3" && it.customFile == null },
     VoiceGroup("הקולות שלי", "מהקלטות", "", mine = true) { it.customFile != null },
