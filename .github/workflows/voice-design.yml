@@ -1,0 +1,87 @@
+name: Designed voices (VoxCPM2 -> Qwen)
+
+# New voices from a text description with openbmb/VoxCPM2 (Apache-2.0): a synthetic reference clip per description,
+# then the Qwen voice print (.spk) the app can use, and a Qwen render to hear it as the phone would. No real person.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/voice-design.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  design:
+    runs-on: ubuntu-latest
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build qwentts.cpp (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts qwen-codec -j 4 2>&1 | tail -1
+      - run: |
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -q voxcpm huggingface_hub soundfile librosa "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+      - name: Design reference clips (VoxCPM2)
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import time, numpy as np, soundfile as sf, librosa
+          from voxcpm import VoxCPM
+          m = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False)
+          D = {
+            "d_commentator": "An excited Israeli male football commentator, energetic and enthusiastic, medium-deep voice, fast lively delivery",
+            "d_radio": "A confident young Israeli man, a warm and lively radio sports presenter, friendly smile in the voice",
+            "d_woman": "An energetic young Israeli woman, a sports TV presenter, clear, upbeat and confident",
+            "d_stadium": "A dramatic stadium announcer, very excited, a powerful deep male voice full of energy",
+          }
+          REF = ["ערב טוב לכולם, והיום יש לנו שלושה משחקים מעולים!", "אני הולך להסביר לכם בדיוק על מה כדאי לשים, ולמה היחס הזה פשוט מטורף."]
+          for k, d in D.items():
+              t0 = time.time(); parts = []
+              for s in REF:
+                  w = m.generate(text=f"({d}){s}", cfg_value=2.0, inference_timesteps=10)
+                  parts += [np.asarray(w, np.float32).reshape(-1), np.zeros(9600, np.float32)]
+              w = np.concatenate(parts[:-1])
+              sf.write(f"out/{k}_ref48.wav", w, 48000)
+              sf.write(f"out/{k}.wav", librosa.resample(w, orig_sr=48000, target_sr=24000), 24000)
+              print("DESIGNED", k, f"{len(w)/48000:.1f}s audio in {time.time()-t0:.0f}s", flush=True)
+          PY
+      - name: Qwen voice prints and renders
+        run: |
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir q --include "*.gguf"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx")
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          S = ["ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה.",
+               "תסתכלו על היחס, והיחס פה פשוט מטורף. אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות.",
+               "מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!"]
+          for i, s in enumerate(S): open(f"s{i}.txt", "w").write(fix(s))
+          PY
+          B=android/qwen/build/host; M=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C=q/qwen-tokenizer-12hz-Q4_K_M.gguf
+          for w in out/d_*[a-z].wav; do
+            k=$(basename $w .wav)
+            $B/qwen-codec --model $C --talker $M -i $w > /dev/null 2>&1 || echo "FAIL spk $k"
+            for i in 0 1 2; do $B/qwen-tts --model $M --codec $C --ref-spk out/$k.spk --lang auto --greedy --max-new 400 -o out/q_${k}_$i.wav < s$i.txt > /dev/null 2>&1 || echo "FAIL $k $i"; done
+            echo "QWEN $k"
+          done
+          ls -la out/*.spk
+          cd out && tar czf ../designed.tgz *.spk *.wav && cd ..
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f designed.tgz ] || exit 0
+          gh release delete designed-voices -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create designed-voices designed.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Designed voices (for the app)" --notes "Synthetic voices designed from text with VoxCPM2 (Apache-2.0), and their Qwen voice prints. Not the app."
