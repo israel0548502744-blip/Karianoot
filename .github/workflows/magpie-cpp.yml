@@ -39,14 +39,13 @@ jobs:
           pip install -q gguf pyyaml numpy huggingface_hub soundfile scipy faster-whisper
       - name: Models
         run: |
-          hf download notmax123/magpie_tts_multilingual_357m-he --revision $MAGPIE_HE_REV --local-dir ckpt \
-            --include magpie_hebrew.ckpt hparams.yaml speaker_index.json "assets/*.json" > /dev/null
+          hf download notmax123/magpie_tts_multilingual_357m-he --revision $MAGPIE_HE_REV --local-dir ckpt > /dev/null
           CODEC_REV=$(python -c "from huggingface_hub import HfApi; print(HfApi().model_info('$CODEC_REPO').sha)")
           echo "CODEC_REV=$CODEC_REV" | tee -a "$GITHUB_ENV"
           hf download $CODEC_REPO nemo-nano-codec-22khz-1.89kbps-21.5fps.nemo --revision $CODEC_REV --local-dir codec > /dev/null
           mkdir codec_x && tar -xf codec/*.nemo -C codec_x && ls codec_x
-          ls -la ckpt ckpt/assets
-          echo "---- hparams.yaml (without the long lists)"; grep -v "^ *- " ckpt/hparams.yaml | cut -c1-160 | head -150
+          ls -la ckpt
+          grep -n -A8 "hebrew_chartokenizer:" ckpt/hparams.yaml | cut -c1-160
           curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
           curl -sSL -o nemo.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-probe/magpie.tgz" && mkdir nemo && tar xzf nemo.tgz -C nemo || true
       - name: Convert and quantize
