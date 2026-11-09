@@ -40,6 +40,20 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     private val index = File(creationsDir, "index.json")
 
     private var qwen: QwenTts? = null
+    @Volatile private var cancelled = false
+
+    /** Asks the running narration to stop. */
+    fun cancel() { cancelled = true; qwen?.cancel() }
+    fun wasCancelled() = cancelled
+
+    /** Progress callback that also stops the work between pieces when [cancel] was asked. */
+    private fun guard(onStage: (String, Float) -> Unit): (String, Float) -> Unit = { s, p ->
+        if (cancelled) throw kotlinx.coroutines.CancellationException("cancelled")
+        onStage(s, p)
+    }
+
+    /** The voice as the library shows it: name and model, since Qwen and Blue share names. */
+    private fun label(v: VoiceInfo) = v.name + " · " + when (v.modelId) { Catalog.qwen.id -> "Qwen"; "blue_v3" -> "V3"; else -> "2.5" }
 
     /** One loaded voice, whatever the model: splits the text into pieces and speaks each. */
     private interface Engine {
@@ -113,10 +127,12 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     suspend fun speak(text: String, voice: VoiceInfo, opt: BlueTts.Options, onStage: (String, Float) -> Unit): Creation =
         withContext(Dispatchers.Default) {
             lock.withLock {
+                cancelled = false
                 val t0 = System.nanoTime()
-                val engine = engineFor(voice, onStage)
-                onStage("מקריא…", 0.02f)
-                val parts = engine.parts(Pronounce.apply(text, fixes()), opt) { p -> onStage("מקריא…", p) }
+                val stage = guard(onStage)
+                val engine = engineFor(voice, stage)
+                stage("מקריא…", 0.02f)
+                val parts = engine.parts(Pronounce.apply(text, fixes()), opt) { p -> stage("מקריא…", p) }
                 val wav = join(parts.map { it.samples }, opt, engine.sampleRate)
                 val gap = (opt.silence * engine.sampleRate).toInt()
                 var pos = 0
@@ -126,7 +142,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 }
                 val f = File(creationsDir, "karianoot_${System.currentTimeMillis()}.wav")
                 Wav.write(f, wav, engine.sampleRate)
-                val c = Creation(f, text, voice.name, wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
+                val c = Creation(f, text, label(voice), wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
                     ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed, opt.temperature)
                 save(listOf(c) + history())
                 c

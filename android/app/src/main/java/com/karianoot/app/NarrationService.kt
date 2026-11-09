@@ -77,7 +77,7 @@ class NarrationService : Service() {
                         .setContentIntent(Notify.openApp(this@NarrationService))
                         .build()
                     // Only when the user is outside the app; inside it they already see the result.
-                    if (!app.inForeground) nm.notify(Notify.DONE_ID, done)
+                    if (!app.inForeground && s.error != "הקריינות בוטלה") nm.notify(Notify.DONE_ID, done)
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }

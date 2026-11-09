@@ -191,7 +191,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         if (history.none { it.file == c.file }) history.add(0, c)
         while (history.size > Speech.KEEP) history.removeAt(history.size - 1)
     }
-    LaunchedEffect(job.error) { job.error?.let { Toast.makeText(ctx, "שגיאה: $it", Toast.LENGTH_LONG).show() } }
+    LaunchedEffect(job.error) { job.error?.let { Toast.makeText(ctx, if (it == "הקריינות בוטלה") it else "שגיאה: $it", Toast.LENGTH_LONG).show() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(10.dp))
         Column(Modifier.enter(0)) {
@@ -279,7 +279,10 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                     Text("${(job.progress * 100).toInt()}%", color = C.Gold, fontWeight = FontWeight.Bold)
                 }
                 GoldProgress(job.progress)
-                Text("אפשר לצאת מהאפליקציה. תקבלו התראה כשהקריינות מוכנה.", color = C.Faint, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("אפשר לצאת מהאפליקציה. תקבלו התראה כשהקריינות מוכנה.", color = C.Faint, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    SoftButton("ביטול", icon = Icons.Rounded.Close) { app.cancelNarration() }
+                }
             }
         }
 

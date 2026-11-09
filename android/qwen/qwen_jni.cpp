@@ -70,7 +70,7 @@ JNIEXPORT jfloatArray JNICALL Java_com_karianoot_engine_QwenNative_voicePrint(JN
 // Stressed IPA -> 24 kHz mono samples, in the voice of `spk` (x-vector clone mode, as tested).
 // temperature 0 = greedy (the tested setting); seed -1 = random.
 JNIEXPORT jfloatArray JNICALL Java_com_karianoot_engine_QwenNative_synthesize(JNIEnv * env, jclass, jlong h, jstring ipa,
-                                                                          jfloatArray spk, jfloat temperature, jlong seed) {
+                                                                          jfloatArray spk, jfloat temperature, jlong seed, jint maxFrames) {
     g_cancel = false;
     const char * text = env->GetStringUTFChars(ipa, nullptr);
     jsize dim = env->GetArrayLength(spk);
@@ -83,10 +83,12 @@ JNIEXPORT jfloatArray JNICALL Java_com_karianoot_engine_QwenNative_synthesize(JN
     p.ref_spk_emb = s.data();
     p.ref_spk_dim = (int) dim;
     p.seed = (int64_t) seed;
-    p.max_new_tokens = 2048;
+    // A cap from the text length (12.5 frames per second of speech), so a run that misses its end stops instead of
+    // talking for minutes.
+    p.max_new_tokens = maxFrames > 0 ? maxFrames : 2048;
     p.temperature = temperature;
     p.subtalker_temperature = temperature;
-    p.repetition_penalty = 1.0f;
+    p.repetition_penalty = temperature > 0 ? 1.05f : 1.0f;   // upstream default when sampling; greedy as tested
     p.cancel = cancel_cb;
     qt_audio a = {};
     qt_status st = qt_synthesize((qt_context *) h, &p, &a);

@@ -70,9 +70,12 @@ class KarianootApp : Application() {
             runCatching {
                 speech.speak(text, voice, opt) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
             }.onSuccess { c -> _job.value = JobState(result = c) }
-                .onFailure { e -> _job.value = JobState(error = e.message ?: e.toString()) }
+                .onFailure { e -> _job.value = JobState(error = if (speech.wasCancelled()) "הקריינות בוטלה" else e.message ?: e.toString()) }
         }
     }
+
+    /** Stops the narration being made (between pieces for Blue, within a second for Qwen). */
+    fun cancelNarration() { if (_job.value.busy) { _job.value = _job.value.copy(stage = "מבטל…"); speech.cancel() } }
 
     /** Making a voice from a recording; null when idle, otherwise a status line. */
     val cloning = MutableStateFlow<String?>(null)

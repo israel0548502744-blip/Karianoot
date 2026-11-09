@@ -21,7 +21,7 @@ object QwenNative {
     /** Speaker embedding ("voice print") from 24 kHz mono audio, or null. */
     @JvmStatic external fun voicePrint(handle: Long, audio24k: FloatArray): FloatArray?
     /** Stressed IPA -> 24 kHz mono samples in the voice of [voicePrint]; temperature 0 = greedy. */
-    @JvmStatic external fun synthesize(handle: Long, ipa: String, voicePrint: FloatArray, temperature: Float, seed: Long): FloatArray?
+    @JvmStatic external fun synthesize(handle: Long, ipa: String, voicePrint: FloatArray, temperature: Float, seed: Long, maxFrames: Int): FloatArray?
 }
 
 /**
@@ -48,7 +48,10 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
 
     /** One piece of text (already IPA) -> samples. */
     fun speakIpa(ipa: String, voice: FloatArray, temperature: Float = 0f, seed: Long = -1): FloatArray =
-        QwenNative.synthesize(h, ipa, voice, temperature, seed) ?: error("Qwen: " + QwenNative.lastError())
+        QwenNative.synthesize(h, ipa, voice, temperature, seed, maxFrames(ipa)) ?: error("Qwen: " + QwenNative.lastError())
+
+    /** Stops the running [speakIpa] (it then fails with "cancelled"). */
+    fun cancel() = QwenNative.cancel()
 
     /** The text in pieces of 2-3 sentences, each spoken on its own (same split as Blue). */
     fun synthesizeParts(text: String, voice: FloatArray, temperature: Float = 0f, onProgress: (Float) -> Unit = {}): List<BlueTts.Part> {
@@ -61,6 +64,12 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
     override fun close() = QwenNative.free(h)
 
     companion object {
+        /**
+         * Frame budget for a piece: speech runs ~13 IPA characters per second and Qwen makes 12.5 frames per
+         * second, so about 1 frame per character; twice that plus 3 seconds is generous but bounded.
+         */
+        fun maxFrames(ipa: String) = (40 + ipa.length * 2).coerceAtMost(1500)
+
         /** A voice print saved as raw little-endian float32 (.spk, as qwen-codec writes it). */
         fun readSpk(bytes: ByteArray): FloatArray {
             val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
