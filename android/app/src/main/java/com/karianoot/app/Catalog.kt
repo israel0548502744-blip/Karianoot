@@ -121,9 +121,6 @@ object Catalog {
     /** Shown as "coming soon" so the plan is visible inside the app. */
     val soon = listOf(
         ModelInfo("noa", "נועה (Piper)", "קול נשי מהיר מאוד.", ModelKind.SOON, license = "CC BY 4.0", credit = "thewh1teagle"),
-        ModelInfo("chatterbox", "Chatterbox", "שכפול קול רב-לשוני, כבד יותר.", ModelKind.SOON, license = "MIT", credit = "Resemble AI"),
-        ModelInfo("omnivoice", "OmniVoice", "600+ שפות ושכפול קול. נבדוק עברית.", ModelKind.SOON, license = "Apache-2.0", credit = "k2-fsa"),
-        ModelInfo("orpheus", "Orpheus עברית", "מודל גדול (3B), ניסיוני, ירוץ על ה-NPU.", ModelKind.SOON, license = "לבדיקה", credit = "Canopy Labs"),
     )
 
     val downloadable = listOf(g2p, qwen, blue25, blueV3, clone)
