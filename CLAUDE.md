@@ -64,7 +64,8 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Qwen speed = `TimeStretch.kt` (WSOLA, pitch kept; ASR clean at 0.9-1.3x). Retakes sample at temperature 0.6.
 - Designed voices (`voice-design.yml`): VoxCPM2 voice design from an English description -> reference clip -> Qwen
   voice print (`assets/qwen/q_d_*.spk`). Synthetic, commercial-safe. VoxCPM2 sometimes adds gibberish in long refs:
-  keep reference text to one sentence.
+  keep reference text to one sentence. Qwen ICL ("full clone": style codes + transcript) is wired in the bridge
+  (`speakStyled`, tested equal to the CLI) but NOT used: with designed refs 4/5 voices ran away (77-96 s, CER up to 79%).
 
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
