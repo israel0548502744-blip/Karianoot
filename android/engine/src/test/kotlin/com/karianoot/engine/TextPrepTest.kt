@@ -23,4 +23,18 @@ class TextPrepTest {
         assertEquals("ה-וָאר פסל את השער", TextPrep.apply("ה-VAR פסל את השער"))
         assertEquals("ליגת האלופות", TextPrep.apply("ליגת האלופות"))
     }
+
+    @Test fun oddsMoneyAndPlus() {
+        assertEquals("ביחס אחד אפס חמש", TextPrep.apply("ביחס 1.05"))
+        assertEquals("יחס שתיים אפס שמונה, לא 2.8", TextPrep.apply("יחס 2.08, לא 2.8"))
+        assertEquals("ביחס 1.85", TextPrep.apply("ביחס 1.85"))
+        assertEquals("1.5 ואחד אפס חמש", TextPrep.apply("1.5 ו-1.05"))
+        assertEquals("שימו 100 שקל ותקבלו 850 שקל", TextPrep.apply("שימו 100 ש\"ח ותקבלו 850 ש״ח"))
+        assertEquals("50 שקל על ניצחון", TextPrep.apply("₪50 על ניצחון"))
+        assertEquals("רק 20 שקל", TextPrep.apply("רק 20₪"))
+        assertEquals("דקה 90 פלוס 3", TextPrep.apply("דקה 90+3"))
+        assertEquals("הנדיקפ פלוס 1.5", TextPrep.apply("הנדיקפ +1.5"))
+        assertEquals("אני הולך על איקס.", TextPrep.apply("אני הולך על X."))
+        assertEquals("אחת איקס שתיים, ו-איקס", TextPrep.apply("1 X 2, ו-X"))
+    }
 }
