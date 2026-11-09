@@ -64,32 +64,35 @@ jobs:
           PY
       - name: CPU shim
         run: |
-          # NeMo's Magpie inference moves everything to CUDA; on a CPU runner, map those calls to the CPU.
+          # NeMo's Magpie inference moves everything to CUDA; on a CPU runner, send those calls to the CPU.
+          # (Methods only: wrapping torch factory functions breaks NeMo's torch.jit.script.)
           mkdir -p shim && cat > shim/sitecustomize.py <<'PY'
           import torch
           def _cpu(d):
               return "cpu" if (isinstance(d, str) and d.startswith("cuda")) or (isinstance(d, torch.device) and d.type == "cuda") else d
-          def _fixkw(k):
-              if "device" in k: k["device"] = _cpu(k["device"])
-              return k
-          for _n in ["zeros", "ones", "tensor", "arange", "full", "empty", "randn", "rand", "randint", "linspace",
-                     "zeros_like", "ones_like", "full_like", "empty_like", "as_tensor", "eye"]:
-              _f = getattr(torch, _n)
-              setattr(torch, _n, (lambda f: lambda *a, **k: f(*a, **_fixkw(k)))(_f))
           torch.Tensor.cuda = lambda self, *a, **k: self
           torch.nn.Module.cuda = lambda self, *a, **k: self
           _tto, _mto = torch.Tensor.to, torch.nn.Module.to
-          torch.Tensor.to = lambda self, *a, **k: _tto(self, *[_cpu(x) for x in a], **_fixkw(k))
-          torch.nn.Module.to = lambda self, *a, **k: _mto(self, *[_cpu(x) for x in a], **_fixkw(k))
+          def _tensor_to(self, *a, **k):
+              if "device" in k: k["device"] = _cpu(k["device"])
+              return _tto(self, *[_cpu(x) for x in a], **k)
+          def _module_to(self, *a, **k):
+              if "device" in k: k["device"] = _cpu(k["device"])
+              return _mto(self, *[_cpu(x) for x in a], **k)
+          torch.Tensor.to = _tensor_to
+          torch.nn.Module.to = _module_to
           torch.cuda.is_available = lambda: False
           torch.set_num_threads(4)
           PY
+          # Literal device='cuda' arguments in the TTS code.
+          grep -rl "cuda" m/NeMo/nemo/collections/tts | xargs sed -i -e "s/device='cuda'/device='cpu'/g" -e 's/device="cuda"/device="cpu"/g' -e "s/device: str = \"cuda\"/device: str = \"cpu\"/g"
+          grep -rn "device='cuda'\|device=\"cuda\"" m/NeMo/nemo/collections/tts | head -5 || true
       - name: Generate
         run: |
-          cd m
+          cd m && set -o pipefail
           start=$(date +%s)
           PYTHONPATH=$GITHUB_WORKSPACE/shim python scripts/infer_hebrew.py --checkpoint ../ckpt/magpie_hebrew.ckpt --hparams ../ckpt/hparams.yaml \
-            --manifest ../ctx/manifest.json --audio-dir ../ctx --out-dir ../out --gpu "" 2>&1 | tail -60
+            --manifest ../ctx/manifest.json --audio-dir ../ctx --out-dir ../out --gpu "" 2>&1 | grep -v "Warning\|warn" | tail -80
           echo "SECONDS $(( $(date +%s) - start ))"
           find ../out -name "*.wav" | head -5; find ../out -name "*.wav" | wc -l
       - name: Pack
