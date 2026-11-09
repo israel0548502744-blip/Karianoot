@@ -71,6 +71,7 @@ jobs:
           w, _ = t(fix(REF), lang="he", style=Style(a("style_ttl"), np.zeros((1, 8, 16), np.float32)), total_step=10, text_is_phonemes=True)
           sf.write("qdir/voices/q_namer.wav", librosa.resample(limit_peak(w[0]), orig_sr=44100, target_sr=24000), 24000)
           open("qdir/s0.txt", "w").write(fix("ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה."))
+          open("qdir/ref_ipa.txt", "w").write(fix(REF))
           PY
           ls -la $Q $Q/voices
       - name: Voice prints and CLI reference
@@ -80,6 +81,8 @@ jobs:
           ls -la $Q/voices/*.spk
           $B/qwen-tts --model $Q/qwen-talker-1.7b-base-Q4_K_M.gguf --codec $Q/qwen-tokenizer-12hz-Q4_K_M.gguf --ref-spk $Q/voices/q_male2.spk \
             --lang auto --greedy --seed 1 -o $Q/cli_s0.wav < $Q/s0.txt 2>&1 | tail -3
+          $B/qwen-tts --model $Q/qwen-talker-1.7b-base-Q4_K_M.gguf --codec $Q/qwen-tokenizer-12hz-Q4_K_M.gguf --ref-spk $Q/voices/q_male2.spk \
+            --ref-rvq $Q/voices/q_male2.rvq --ref-text $Q/ref_ipa.txt --lang auto --greedy --seed 1 -o $Q/cli_icl_s0.wav < $Q/s0.txt 2>&1 | tail -3
       - name: Bridge test (Kotlin -> JNI -> qwentts.cpp)
         run: |
           export KARIANOOT_QWEN=$PWD/qdir

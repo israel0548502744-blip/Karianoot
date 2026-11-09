@@ -36,4 +36,20 @@ class QwenTest {
             assertTrue("length differs from the command line", abs(wav.size - ref.size) < 2400)
         }
     }
+
+    /** Full clone (ICL) through the bridge equals the CLI with --ref-rvq/--ref-text (cli_icl_s0.wav, ref_ipa.txt). */
+    @Test fun styledBridgeMatchesCommandLine() {
+        assumeTrue(dir != null && System.getProperty("karianoot.qwenjni") != null && File(dir, "cli_icl_s0.wav").exists())
+        QwenTts(File(dir, "qwen-talker-1.7b-base-Q4_K_M.gguf").path, File(dir, "qwen-tokenizer-12hz-Q4_K_M.gguf").path, null, 4).use { q ->
+            val spk = QwenTts.readSpk(File(dir, "voices/q_male2.spk").readBytes())
+            val codes = QwenTts.readRvq(File(dir, "voices/q_male2.rvq").readBytes())
+            val wav = q.speakStyled(File(dir, "s0.txt").readText().trim(), spk, codes, File(dir, "ref_ipa.txt").readText().trim(), 0f, 1)
+            val (ref, _) = Wav.read(File(dir, "cli_icl_s0.wav"))
+            val n = minOf(ref.size, wav.size)
+            var d = 0.0; var a = 0.0; var b = 0.0
+            for (i in 0 until n) { d += wav[i] * ref[i]; a += wav[i] * wav[i]; b += ref[i] * ref[i] }
+            println("CHECK qwen styled ${wav.size} vs cli ${ref.size} corr=${"%.4f".format(d / sqrt(a * b + 1e-12))}")
+            assertTrue(wav.size > 24000 && abs(wav.size - ref.size) < 2400)
+        }
+    }
 }

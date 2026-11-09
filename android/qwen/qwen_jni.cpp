@@ -100,4 +100,66 @@ JNIEXPORT jfloatArray JNICALL Java_com_karianoot_engine_QwenNative_synthesize(JN
     return out;
 }
 
+// Number of RVQ codebooks of the codec (K); style-reference codes are [K, T] row-major.
+JNIEXPORT jint JNICALL Java_com_karianoot_engine_QwenNative_numCodebooks(JNIEnv *, jclass, jlong h) {
+    return qt_num_codebooks((qt_context *) h);
+}
+
+// Style reference (ICL) codes of 24 kHz mono audio, [K, T] row-major; null on failure.
+JNIEXPORT jintArray JNICALL Java_com_karianoot_engine_QwenNative_styleCodes(JNIEnv * env, jclass, jlong h, jfloatArray audio) {
+    jsize n = env->GetArrayLength(audio);
+    std::vector<float> a((size_t) n);
+    env->GetFloatArrayRegion(audio, 0, n, a.data());
+    qt_voice_ref ref = {};
+    if (qt_extract_voice_ref((qt_context *) h, a.data(), (int) n, &ref) != QT_STATUS_OK || !ref.ref_codes) {
+        qt_voice_ref_free(&ref);
+        return nullptr;
+    }
+    jsize count = ref.num_codebooks * ref.ref_T;
+    jintArray out = env->NewIntArray(count);
+    env->SetIntArrayRegion(out, 0, count, (const jint *) ref.ref_codes);
+    qt_voice_ref_free(&ref);
+    return out;
+}
+
+// "Full clone" (ICL): voice print + style reference codes + the reference's IPA transcript.
+JNIEXPORT jfloatArray JNICALL Java_com_karianoot_engine_QwenNative_synthesizeStyled(JNIEnv * env, jclass, jlong h, jstring ipa,
+        jfloatArray spk, jintArray codes, jstring refIpa, jfloat temperature, jlong seed, jint maxFrames) {
+    g_cancel = false;
+    qt_context * q = (qt_context *) h;
+    const char * text = env->GetStringUTFChars(ipa, nullptr);
+    const char * refText = env->GetStringUTFChars(refIpa, nullptr);
+    jsize dim = env->GetArrayLength(spk);
+    std::vector<float> s((size_t) dim);
+    env->GetFloatArrayRegion(spk, 0, dim, s.data());
+    jsize nc = env->GetArrayLength(codes);
+    std::vector<int32_t> c((size_t) nc);
+    env->GetIntArrayRegion(codes, 0, nc, (jint *) c.data());
+    int K = qt_num_codebooks(q);
+    qt_tts_params p;
+    qt_tts_default_params(&p);
+    p.text = text;
+    p.lang = "auto";
+    p.ref_spk_emb = s.data();
+    p.ref_spk_dim = (int) dim;
+    p.ref_codes = c.data();
+    p.ref_T = K > 0 ? (int) (nc / K) : 0;
+    p.ref_text = refText;
+    p.seed = (int64_t) seed;
+    p.max_new_tokens = maxFrames > 0 ? maxFrames : 2048;
+    p.temperature = temperature;
+    p.subtalker_temperature = temperature;
+    p.repetition_penalty = temperature > 0 ? 1.05f : 1.0f;
+    p.cancel = cancel_cb;
+    qt_audio a = {};
+    qt_status st = qt_synthesize(q, &p, &a);
+    env->ReleaseStringUTFChars(ipa, text);
+    env->ReleaseStringUTFChars(refIpa, refText);
+    if (st != QT_STATUS_OK || !a.samples) { qt_audio_free(&a); return nullptr; }
+    jfloatArray out = env->NewFloatArray(a.n_samples);
+    env->SetFloatArrayRegion(out, 0, a.n_samples, a.samples);
+    qt_audio_free(&a);
+    return out;
+}
+
 }  // extern "C"

@@ -22,6 +22,12 @@ object QwenNative {
     @JvmStatic external fun voicePrint(handle: Long, audio24k: FloatArray): FloatArray?
     /** Stressed IPA -> 24 kHz mono samples in the voice of [voicePrint]; temperature 0 = greedy. */
     @JvmStatic external fun synthesize(handle: Long, ipa: String, voicePrint: FloatArray, temperature: Float, seed: Long, maxFrames: Int): FloatArray?
+    @JvmStatic external fun numCodebooks(handle: Long): Int
+    /** Style reference codes ([K, T] row-major) of 24 kHz mono audio, or null. */
+    @JvmStatic external fun styleCodes(handle: Long, audio24k: FloatArray): IntArray?
+    /** "Full clone": voice print + style codes + the reference's IPA transcript (Qwen ICL mode). */
+    @JvmStatic external fun synthesizeStyled(handle: Long, ipa: String, voicePrint: FloatArray, codes: IntArray, refIpa: String,
+                                             temperature: Float, seed: Long, maxFrames: Int): FloatArray?
 }
 
 /**
@@ -50,6 +56,13 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
     fun speakIpa(ipa: String, voice: FloatArray, temperature: Float = 0f, seed: Long = -1): FloatArray =
         QwenNative.synthesize(h, ipa, voice, temperature, seed, maxFrames(ipa)) ?: error("Qwen: " + QwenNative.lastError())
 
+    /** A style reference (the recording itself, as codec codes) for [speakStyled]. */
+    fun styleCodes(audio24k: FloatArray): IntArray = QwenNative.styleCodes(h, audio24k) ?: error("Qwen style: " + QwenNative.lastError())
+
+    /** Speaks in the voice AND speaking style of a reference recording whose IPA transcript is [refIpa]. */
+    fun speakStyled(ipa: String, voice: FloatArray, codes: IntArray, refIpa: String, temperature: Float = 0f, seed: Long = -1): FloatArray =
+        QwenNative.synthesizeStyled(h, ipa, voice, codes, refIpa, temperature, seed, maxFrames(ipa)) ?: error("Qwen: " + QwenNative.lastError())
+
     /** Stops the running [speakIpa] (it then fails with "cancelled"). */
     fun cancel() = QwenNative.cancel()
 
@@ -75,6 +88,12 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
             val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
             return FloatArray(bytes.size / 4) { b.getFloat(it * 4) }
         }
+        /** Style codes saved as raw little-endian int32 (.rvq, as qwen-codec writes it). */
+        fun readRvq(bytes: ByteArray): IntArray {
+            val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            return IntArray(bytes.size / 4) { b.getInt(it * 4) }
+        }
+
         fun writeSpk(v: FloatArray): ByteArray {
             val b = java.nio.ByteBuffer.allocate(v.size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
             for (x in v) b.putFloat(x)
