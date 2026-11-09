@@ -24,8 +24,11 @@ object Joiner {
     private const val HOP_MS = 10
     private const val QUIET_DB = -38.0       // below the piece's loudest 10 ms: a pause
     private const val MIN_RUN_MS = 50        // shorter quiet runs are gaps between sounds, not pauses
-    private const val MARGIN_IN_MS = 15      // kept before the first sound
-    private const val MARGIN_OUT_MS = 40     // kept after the last sound (its decay)
+    private const val EDGE_DB = -55.0        // softer than a pause: a breathy "h" onset or a decay is kept (measured
+                                             // ~-48 dB for the h of "היחס" in Qwen; silence is below -60)
+    private const val MARGIN_MS = 10         // kept beyond the edge
+    private const val MAX_LEAD_MS = 120      // at most this much soft sound before the first loud frame
+    private const val MAX_TAIL_MS = 150      // and after the last
     private const val FADE_MS = 4
     private const val MIN_PAUSE = 0.06f
 
@@ -80,8 +83,14 @@ object Joiner {
             }
             chosen.sortBy { it[0] }
         }
-        val start = max(0, first * h - rate * MARGIN_IN_MS / 1000)
-        val end = min(w.size, (last + 1) * h + rate * MARGIN_OUT_MS / 1000)
+        // The edges: the first/last frame above EDGE_DB next to the speech, so soft onsets and decays are not cut.
+        val soft = BooleanArray(n) { 20 * log10(e[it] / peak + 1e-12) > EDGE_DB }
+        var a = first; val minA = max(0, first - MAX_LEAD_MS / HOP_MS)
+        while (a > minA && soft[a - 1]) a--
+        var b = last; val maxB = min(n - 1, last + MAX_TAIL_MS / HOP_MS)
+        while (b < maxB && soft[b + 1]) b++
+        val start = max(0, a * h - rate * MARGIN_MS / 1000)
+        val end = min(w.size, (b + 1) * h + rate * MARGIN_MS / 1000)
         return Piece(w, start, end, chosen, if (cnt > 0) sqrt(lvl / cnt) else 0.0, first * h - start, max(0, end - (last + 1) * h))
     }
 
