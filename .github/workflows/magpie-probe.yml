@@ -31,6 +31,8 @@ jobs:
           pip install -q -e "./NeMo[tts]" 2>&1 | tail -3
           pip install -q "huggingface_hub[cli]" peft onnxruntime soundfile "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus"
           mkdir -p venv/bin && ln -sf "$(which python)" venv/bin/python
+          # Current NeMo no longer accepts 'feature_dir' in the evalset config.
+          sed -i '/"feature_dir"/d' scripts/infer_hebrew.py
       - name: Model and text
         run: |
           hf download notmax123/magpie_tts_multilingual_357m-he --revision d0c5e96fdc167e3f2286e9ce5813b3c795f0b53a --local-dir ckpt
