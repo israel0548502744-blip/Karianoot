@@ -1,0 +1,72 @@
+name: Qwen sampling probe
+
+# Does sampling (instead of greedy) make QwenTTS-he livelier without word errors? Renders a grid of settings with the
+# app's own voice prints; scoring (ASR) is done offline from the published wavs.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/qwen-sampling.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  grid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build qwentts.cpp (host)
+        run: |
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts -j 4 2>&1 | tail -1
+      - name: Model and IPA
+        run: |
+          pip install -q huggingface_hub "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" onnxruntime
+          hf download notmax123/QwenTTS-he-1.7B-GGUF --revision 2b01f8797400c04cb4bc9b62a94a0e6f8866b1b9 --local-dir q --include "*.gguf"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
+          python - <<'PY'
+          from renikud_onnx import G2P
+          g = G2P("renikud/model_int8.onnx")
+          fix = lambda s: g.phonemize(s).replace("hajˈaχas", "hajjˈaχas").replace("baʁtslˈona", "baʁtselˈona")
+          S = ["ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה.",
+               "תסתכלו על היחס, והיחס פה פשוט מטורף. אני ממליץ לשים על ניצחון של ריאל, ושני שערים לפחות.",
+               "מי שעוד לא הצטרף לקבוצה, זה הזמן. בהצלחה לכולם, ונתראה במשחק הבא!",
+               "היחס על ניצחון של מכבי חיפה הוא 2.5, ויש 70% סיכוי לשני שערים.",
+               "בשעה 21:45 שריקת הפתיחה בין ליברפול למנצ'סטר סיטי, ואני אומר לכם: זה הולך להיות מטורף!"]
+          for i, s in enumerate(S): open(f"s{i}.txt", "w").write(fix(s)); print(i, fix(s))
+          PY
+      - name: Render the grid
+        run: |
+          mkdir -p out; B=android/qwen/build/host/qwen-tts; M=q/qwen-talker-1.7b-base-Q4_K_M.gguf; C=q/qwen-tokenizer-12hz-Q4_K_M.gguf
+          declare -A CFG=( [greedy]="--greedy" [t03]="--temp 0.3 --sub-temp 0.3" [t06]="--temp 0.6 --sub-temp 0.6" \
+                           [t09]="--temp 0.9 --sub-temp 0.9" [sub06]="--temp 0 --sub-temp 0.6" [talk06]="--temp 0.6 --sub-temp 0" )
+          for v in male2 tet namer; do
+            for c in greedy t03 t06 t09 sub06 talk06; do
+              for seed in 1 2; do
+                [ $c = greedy ] && [ $seed = 2 ] && continue
+                for i in 0 1 2 3 4; do
+                  $B --model $M --codec $C --ref-spk android/app/src/main/assets/qwen/q_$v.spk --lang auto ${CFG[$c]} --seed $seed \
+                     --max-new 400 -o out/${v}_${c}_s${seed}_$i.wav < s$i.txt > /dev/null 2>&1 || echo "FAIL $v $c $seed $i"
+                done
+                echo "DONE $v $c $seed"
+              done
+            done
+          done
+          cd out && tar czf ../qwen_grid.tgz *.wav && cd .. && ls -la qwen_grid.tgz
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f qwen_grid.tgz ] || exit 0
+          gh release delete qwen-grid -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create qwen-grid qwen_grid.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Qwen sampling grid (for tools)" --notes "QwenTTS-he renders with different sampling settings. Not the app."
