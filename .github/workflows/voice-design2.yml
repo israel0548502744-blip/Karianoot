@@ -74,7 +74,7 @@ jobs:
           g = G2P("renikud/model_int8.onnx")
           open("ref_ipa.txt", "w").write(g.phonemize("ערב טוב לכולם, והיום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק על מה כדאי לשים!"))
           PY
-          for w in out/d_*[a-z0-9].wav; do
+          for w in out/d_veteran.wav out/d_young.wav out/d_pundit.wav out/d_woman2.wav out/d_hype.wav; do
             k=$(basename $w .wav)
             $B/qwen-codec --model $C --talker $M -i $w > /dev/null 2>&1 || echo "FAIL spk $k"
             for i in 0 1 2; do
