@@ -39,7 +39,7 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - `TextPrep.kt`: football text cleanup before G2P (1X2, handicap minus, scores vs times, ת"א etc., Latin acronyms
   -> Hebrew letter names with niqqud). Runs after the user's pronunciation fixes.
 - Voice picker page (artifact FxyMdtTTTA4sxxSno8SZtU, db collection `picks`): the user's choices per round.
-- `Lexicon.kt`: ~50 football names/terms the G2P misreads (תיקו "teko", ארסנל, מבאפה, נתניה, גווארדיולה...) -> stressed IPA,
+- `Lexicon.kt`: ~80 football names/terms the G2P misreads (תיקו "teko", ארסנל, מבאפה, נתניה, גווארדיולה...) -> stressed IPA,
   substituted just before the G2P (it copies non-Hebrew through; GoldenTest checks), Hebrew prefixes read too ("ולמבאפה").
   Found by phonemizing ~200 club/player/term names and checking each by hand. Add new misreads there.
 - `BlueTts.IPA_FIXES`: "היחס" → doubled y, "ברצלונה" → baʁtselˈona (the user picked both by ear). User fixes: `Pronounce.kt` + "תיקוני הגייה" dialog.
