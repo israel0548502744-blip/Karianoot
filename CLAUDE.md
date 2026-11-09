@@ -48,7 +48,11 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - QwenTTS-he-1.7B (Apache-2.0, LoRA on Qwen3-TTS) clones a voice from a clip; 0 word errors in ASR, livelier. Phone path:
   notmax123/QwenTTS-he-1.7B-GGUF (Q4_K_M, 1.47 GB) on qwentts.cpp (MIT, C API, has a Termux build); CPU RTF ~2.9 on a
   4-core CI runner (`qwen-cpp-probe.yml`). Input is stressed IPA (RenikudPlus).
-- Rejected: Chatterbox (bad Hebrew), Zonos-Hebrew / MamreTTS / robo_shaul (NC), voxtream2-he (GPL), Kokoro-he (NC data).
+- Rejected: Chatterbox (bad Hebrew), Zonos-Hebrew / MamreTTS / robo_shaul (NC), voxtream2-he (GPL), Kokoro-he (NC data),
+  OmniVoice (Apache, only ~13 h Hebrew: many word errors, very slow), VoxCPM2 (Apache, good Hebrew but 2B / 5 GB,
+  RTF ~17 on CPU: too heavy for the phone; useful offline for designing voices from a text description).
+- Qwen measurements (Nov 9): whole passage in one pass drops the end -> keep 130-char pieces; sampling (0.3-0.9) is as
+  accurate as greedy (ASR ~1% CER on number-free sentences), so retakes sample at 0.6 (greedy repeats itself).
 
 ## Qwen in the app (Nov 9 2026)
 - `android/qwen/`: `qwen_jni.cpp` (JNI over the qwentts.cpp C API), `build_android.sh` (NDK arm64, run by build-apk.yml),
