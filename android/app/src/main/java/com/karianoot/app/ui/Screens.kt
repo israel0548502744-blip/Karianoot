@@ -314,6 +314,10 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         GoldButton(if (busy) "מקריא…" else "צור קריינות", Modifier.fillMaxWidth().enter(5), icon = Icons.Rounded.AutoAwesome,
             enabled = !busy && g2pReady && voice != null && text.isNotBlank()) {
             val v = voice ?: return@GoldButton
+            // A template's [placeholders] not filled in yet would be read out as is.
+            Regex("\\[[^\\]]{1,20}]").find(text)?.let {
+                Toast.makeText(ctx, "יש עוד מה למלא בתבנית: ${it.value}", Toast.LENGTH_LONG).show(); return@GoldButton
+            }
             app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive))
         }
 
