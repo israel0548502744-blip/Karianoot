@@ -48,6 +48,13 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   4-core CI runner (`qwen-cpp-probe.yml`). Input is stressed IPA (RenikudPlus).
 - Rejected: Chatterbox (bad Hebrew), Zonos-Hebrew / MamreTTS / robo_shaul (NC), voxtream2-he (GPL), Kokoro-he (NC data).
 
+## Qwen in the app (Nov 9 2026)
+- `android/qwen/`: `qwen_jni.cpp` (JNI over the qwentts.cpp C API), `build_android.sh` (NDK arm64, run by build-apk.yml),
+  `patch_qwentts.sh` (QT_N_THREADS override, qwenjni target). Kotlin: `engine/QwenNative.kt` (`QwenTts`).
+- `qwen-voices.yml`: host build, preset voice prints (`app/src/main/assets/qwen/*.spk`, 2048 f32), and `QwenTest`
+  (Kotlin -> JNI output equals the CLI, corr 1.0). Qwen uses greedy decoding (0 word errors in tests).
+- Studio groups voices: Qwen / Blue 2.5 / Blue V3 / mine, with a men/women filter.
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).
