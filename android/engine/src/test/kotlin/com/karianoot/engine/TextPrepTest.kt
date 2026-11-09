@@ -22,6 +22,7 @@ class TextPrepTest {
         assertEquals("פִּי אֶס גִ'י נגד מילאן", TextPrep.apply("PSG נגד מילאן"))
         assertEquals("ה-וָאר פסל את השער", TextPrep.apply("ה-VAR פסל את השער"))
         assertEquals("ליגת האלופות", TextPrep.apply("ליגת האלופות"))
+        assertEquals("אֶם אֶס אשדוד נגד בני יהודה", TextPrep.apply("מ.ס. אשדוד נגד בני יהודה"))
     }
 
     @Test fun oddsMoneyAndPlus() {

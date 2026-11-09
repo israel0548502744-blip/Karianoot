@@ -42,6 +42,16 @@ class GoldenTest {
         assertEquals("G2P mismatches", 0, bad)
     }
 
+    /** The G2P copies the lexicon's IPA through untouched, prefixes included. */
+    @Test fun lexiconPassesThroughTheG2p() {
+        need()
+        val g2p = HebrewG2P(File(models, "renikud/model_int8.onnx").path)
+        val got = BlueTts.toIpa(g2p, "הימור על תיקו, ולארסנל יש יחס טוב מול מבאפה.")
+        println("CHECK lexicon $got")
+        assertTrue(got, got.contains("tˈeku") && got.contains("uleʔˈaʁsenal") && got.contains("embˈape"))
+        assertTrue(got, got.none { it.code in 0x05D0..0x05EA })
+    }
+
     @Test fun blueMatchesPython() {
         need()
         val tags = golden!!.listFiles()!!.map { it.name }.filter { it.startsWith("blue_") && it.endsWith(".json") }.sorted()

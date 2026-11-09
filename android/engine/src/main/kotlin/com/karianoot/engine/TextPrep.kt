@@ -47,6 +47,8 @@ object TextPrep {
             m.groupValues[1] + (if (ip == 1) "אחד" else HebrewNumbers.cardinal(ip)) + " אפס " +
                 HebrewNumbers.cardinal(m.groupValues[3].toInt())
         }
+        // מ.ס. אשדוד: the dots would also split the sentence there.
+        t = Regex("(?<![$HEB])מ\\.ס\\.?(?![$HEB])").replace(t, "אֶם אֶס")
         for ((k, v) in ABBREV) t = Regex("(?<![$HEB])([ובלמה]?)${Regex.escape(k)}(?![$HEB])").replace(t) { it.groupValues[1] + v }
         // A lone X is the draw (1X2).
         t = Regex("(?<![A-Za-z\\d])X(?![A-Za-z\\d])").replace(t, "איקס")

@@ -39,6 +39,9 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - `TextPrep.kt`: football text cleanup before G2P (1X2, handicap minus, scores vs times, ת"א etc., Latin acronyms
   -> Hebrew letter names with niqqud). Runs after the user's pronunciation fixes.
 - Voice picker page (artifact FxyMdtTTTA4sxxSno8SZtU, db collection `picks`): the user's choices per round.
+- `Lexicon.kt`: ~50 football names/terms the G2P misreads (תיקו "teko", ארסנל, מבאפה, נתניה, גווארדיולה...) -> stressed IPA,
+  substituted just before the G2P (it copies non-Hebrew through; GoldenTest checks), Hebrew prefixes read too ("ולמבאפה").
+  Found by phonemizing ~200 club/player/term names and checking each by hand. Add new misreads there.
 - `BlueTts.IPA_FIXES`: "היחס" → doubled y, "ברצלונה" → baʁtselˈona (the user picked both by ear). User fixes: `Pronounce.kt` + "תיקוני הגייה" dialog.
 - Namer ("נמר"): `app/src/main/assets/voices/namer.json`, made from the user's ElevenLabs clips (the mp3s are NOT in
   git). Personal use only; needs Blue 2.5 + the clone kit (its z_ref duration predictor).
@@ -51,7 +54,8 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - QwenTTS-he-1.7B (Apache-2.0, LoRA on Qwen3-TTS) clones a voice from a clip; 0 word errors in ASR, livelier. Phone path:
   notmax123/QwenTTS-he-1.7B-GGUF (Q4_K_M, 1.47 GB) on qwentts.cpp (MIT, C API, has a Termux build); CPU RTF ~2.9 on a
   4-core CI runner (`qwen-cpp-probe.yml`). Input is stressed IPA (RenikudPlus).
-- Rejected: Chatterbox (bad Hebrew), Zonos-Hebrew / MamreTTS / robo_shaul (NC), voxtream2-he (GPL), Kokoro-he (NC data),
+- Rejected: Chatterbox (bad Hebrew), Zonos-Hebrew / MamreTTS / robo_shaul (NC), Fish-Audio-S2-Pro-He (Fish Audio research
+  license = NC), voxtream2-he (GPL), Kokoro-he (NC data),
   OmniVoice (Apache, only ~13 h Hebrew: many word errors, very slow), VoxCPM2 (Apache, good Hebrew but 2B / 5 GB,
   RTF ~17 on CPU: too heavy for the phone; useful offline for designing voices from a text description).
 - Qwen measurements (Nov 9): whole passage in one pass drops the end -> keep 130-char pieces; sampling (0.3-0.9) is as

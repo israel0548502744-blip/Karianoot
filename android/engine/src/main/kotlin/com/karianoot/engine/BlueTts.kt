@@ -158,7 +158,7 @@ class BlueTts(
                         onProgress: (Float) -> Unit = {}): List<Part> {
         val pieces = chunkText(stripEmoji(text), if (opt.perSentence) CHUNK_CHARS else 220)
         return pieces.mapIndexed { i, piece ->
-            val ipa = if (piece.any { it.code in 0x0590..0x05FF }) fixIpa(g2p!!.phonemize(piece)) else piece
+            val ipa = if (piece.any { it.code in 0x0590..0x05FF }) toIpa(g2p!!, piece) else piece
             Part(piece, infer(ipa.replace(Regex("\\s+"), " ").trim(), voice, opt, noise).first)
                 .also { onProgress((i + 1f) / pieces.size) }
         }
@@ -343,6 +343,9 @@ class BlueTts(
          * Words the voices tend to blur, with a clearer spelling the user picked by ear.
          * "היחס": a doubled y (like a dagesh) keeps "על היחס" / "והיחס" from turning into "ליחס" / "והיאס".
          */
+        /** Hebrew text -> the IPA the voices read: football names first ([Lexicon]), then the G2P and [IPA_FIXES]. */
+        fun toIpa(g2p: HebrewG2P, text: String) = fixIpa(g2p.phonemize(Lexicon.apply(text)))
+
         fun fixIpa(ipa: String): String {
             var out = ipa
             for ((a, b) in IPA_FIXES) out = out.replace(a, b)

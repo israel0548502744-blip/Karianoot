@@ -49,7 +49,7 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
 
     fun ipa(text: String): String {
         val t = BlueTts.stripEmoji(text)
-        return if (t.any { it.code in 0x0590..0x05FF }) BlueTts.fixIpa(g2p!!.phonemize(t)) else t
+        return if (t.any { it.code in 0x0590..0x05FF }) BlueTts.toIpa(g2p!!, t) else t
     }
 
     /** One piece of text (already IPA) -> samples. */
