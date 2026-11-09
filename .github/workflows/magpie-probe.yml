@@ -37,7 +37,7 @@ jobs:
           hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir renikud
           ls -la ckpt ckpt/assets | head -30
           cat ckpt/speaker_index.json || true
-          mkdir -p ctx && ffmpeg -loglevel error -f lavfi -i "anoisesrc=d=11:c=pink:r=22050:a=0.02" -ac 1 ctx/ctx.wav
+          mkdir -p ctx && python -c "import numpy as np, soundfile as sf; sf.write('ctx/ctx.wav', (np.random.default_rng(0).standard_normal(22050 * 11) * 0.02).astype('float32'), 22050)"
           python - <<'PY'
           import json, re
           from renikud_onnx import G2P
