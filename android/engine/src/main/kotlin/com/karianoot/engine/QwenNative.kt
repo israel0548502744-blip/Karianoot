@@ -56,6 +56,9 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
     fun speakIpa(ipa: String, voice: FloatArray, temperature: Float = 0f, seed: Long = -1): FloatArray =
         QwenNative.synthesize(h, ipa, voice, temperature, seed, maxFrames(ipa)) ?: error("Qwen: " + QwenNative.lastError())
 
+    /** Codebooks of the loaded codec (for [readRvq]). */
+    val numCodebooks: Int get() = QwenNative.numCodebooks(h)
+
     /** A style reference (the recording itself, as codec codes) for [speakStyled]. */
     fun styleCodes(audio24k: FloatArray): IntArray = QwenNative.styleCodes(h, audio24k) ?: error("Qwen style: " + QwenNative.lastError())
 
@@ -88,10 +91,18 @@ class QwenTts(talker: String, codec: String, private val g2p: HebrewG2P?, thread
             val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
             return FloatArray(bytes.size / 4) { b.getFloat(it * 4) }
         }
-        /** Style codes saved as raw little-endian int32 (.rvq, as qwen-codec writes it). */
-        fun readRvq(bytes: ByteArray): IntArray {
-            val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-            return IntArray(bytes.size / 4) { b.getInt(it * 4) }
+        /**
+         * Style codes from a .rvq file as qwen-codec writes it: [K, T] row-major, packed at 11 bits per code, LSB-first,
+         * no header (qwentts.cpp rvq-file.h). [k] is the codec's codebook count ([QwenNative.numCodebooks]).
+         */
+        fun readRvq(bytes: ByteArray, k: Int, codeBits: Int = 11): IntArray {
+            val n = ((bytes.size.toLong() * 8) / (k.toLong() * codeBits)).toInt() * k
+            val mask = (1L shl codeBits) - 1
+            var acc = 0L; var bits = 0; var pos = 0
+            return IntArray(n) {
+                while (bits < codeBits && pos < bytes.size) { acc = acc or ((bytes[pos++].toLong() and 0xFF) shl bits); bits += 8 }
+                val v = (acc and mask).toInt(); acc = acc ushr codeBits; bits -= codeBits; v
+            }
         }
 
         fun writeSpk(v: FloatArray): ByteArray {

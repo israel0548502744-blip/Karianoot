@@ -88,7 +88,7 @@ jobs:
           export KARIANOOT_QWEN=$PWD/qdir
           set -o pipefail
           gradle -p android :engine:test --tests 'com.karianoot.engine.QwenTest' --no-daemon -i \
-            -Dorg.gradle.jvmargs=-Xmx2g "-Pkarianoot.qwenjni=$PWD/android/qwen/build/host/libqwenjni.so" 2>&1 | grep -E "CHECK|FAIL|PASS|Exception|expected|BUILD" | head -30
+            -Dorg.gradle.jvmargs=-Xmx2g "-Pkarianoot.qwenjni=$PWD/android/qwen/build/host/libqwenjni.so" 2>&1 | grep -E "CHECK|FAIL|PASS|Exception|expected|BUILD|Error|SIGSEGV|crash" | head -40
       - name: Publish voice prints
         if: always()
         env:

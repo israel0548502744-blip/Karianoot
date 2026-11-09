@@ -42,7 +42,8 @@ class QwenTest {
         assumeTrue(dir != null && System.getProperty("karianoot.qwenjni") != null && File(dir, "cli_icl_s0.wav").exists())
         QwenTts(File(dir, "qwen-talker-1.7b-base-Q4_K_M.gguf").path, File(dir, "qwen-tokenizer-12hz-Q4_K_M.gguf").path, null, 4).use { q ->
             val spk = QwenTts.readSpk(File(dir, "voices/q_male2.spk").readBytes())
-            val codes = QwenTts.readRvq(File(dir, "voices/q_male2.rvq").readBytes())
+            val codes = QwenTts.readRvq(File(dir, "voices/q_male2.rvq").readBytes(), q.numCodebooks)
+            println("CHECK qwen rvq K=${q.numCodebooks} codes=${codes.size} max=${codes.max()}")
             val wav = q.speakStyled(File(dir, "s0.txt").readText().trim(), spk, codes, File(dir, "ref_ipa.txt").readText().trim(), 0f, 1)
             val (ref, _) = Wav.read(File(dir, "cli_icl_s0.wav"))
             val n = minOf(ref.size, wav.size)
