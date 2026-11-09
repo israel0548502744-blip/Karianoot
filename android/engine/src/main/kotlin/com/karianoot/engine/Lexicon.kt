@@ -16,6 +16,9 @@ object Lexicon {
         "הנדיקפ" to "hˈendikep",
         "אנדרדוג" to "ʔˈandeʁdoɡ",
         "הבקעה" to "havkaʔˈa",
+        "סטייק" to "stˈejk",
+        "בנקרול" to "bˈankʁol",
+        "ביו" to "bˈajo",
         // Israeli
         "נתניה" to "netanjˈa",
         // Clubs
