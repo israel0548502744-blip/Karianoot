@@ -157,7 +157,6 @@ private fun BottomBar(tab: Tab, onSelect: (Tab) -> Unit) {
         }
     }
 }
-    "תישארו עד הסוף, ואל תשכחו להצטרף לקבוצה."
 
 @Composable
 fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Creation>, openModels: () -> Unit) {
