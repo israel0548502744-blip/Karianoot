@@ -161,7 +161,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val engine = engineFor(voice, stage)
                 stage("מקריא…", 0.02f)
                 // The user's fixes first (they win), then the football-text cleanup (1X2, PSG, ת"א, scores).
-                val parts = engine.parts(TextPrep.apply(Pronounce.apply(text, fixes())), opt) { p -> stage("מקריא…", p) }
+                val parts = engine.parts(TextPrep.apply(Pronounce.apply(text, fixes())), opt, onProgress = { p -> stage("מקריא…", p) })
                 val wav = join(parts.map { it.samples }, opt, engine.sampleRate)
                 val gap = (opt.silence * engine.sampleRate).toInt()
                 var pos = 0
