@@ -1,0 +1,266 @@
+name: New models probe (MOSS-TTS-Nano, Pocket TTS ONNX)
+
+# Two small Hebrew-capable candidates, rendered on CPU with the standard test passage:
+#  - OpenMOSS-Team/MOSS-TTS-Nano (Apache-2.0, 100M, plain text in, clones from a prompt clip)
+#  - thewh1teagle/pocket-tts-onnx (CC BY 4.0, Kyutai Pocket TTS in ONNX with a Hebrew IPA adapter)
+# Each take is timed and scored with the Hebrew recognizer; wavs + results.json go to prerelease "new-models-probe".
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/new-models-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  moss:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          git clone -q --depth 1 https://github.com/OpenMOSS/MOSS-TTS-Nano moss && git -C moss log -1 --format=%H
+          cd moss && ls && (pip install -q -r requirements.txt 2>&1 | tail -3 || true) && (pip install -q -e . 2>&1 | tail -3 || true)
+          pip install -q soundfile numpy
+      - name: Usage
+        run: |
+          cd moss
+          awk '/^## Quickstart/,/^## MOSS-Audio-Tokenizer-Nano/' README.md | grep -v "^<\|^$" | cut -c1-240 | head -150
+          echo "=== infer.py --help"; python infer.py --help 2>&1 | tail -60 || true
+          echo "=== generate --help"; moss-tts-nano generate --help 2>&1 | tail -60 || true
+          echo "=== assets"; find assets -iname "*.wav" -o -iname "*.mp3" -o -iname "*.flac" | head -60
+      - name: Reference clip
+        run: |
+          curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz && ls wavs/q8_0 | head
+          cp wavs/q8_0/spk10_0.wav ref_magpie10.wav
+      - name: Generate
+        run: |
+          python - <<'PY'
+          import glob, json, os, re, subprocess, sys, time
+          pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          os.makedirs("out/moss", exist_ok=True)
+          root = os.getcwd()
+          def helptext(cmd):
+              r = subprocess.run(cmd, cwd="moss", capture_output=True, text=True)
+              return r.stdout + r.stderr
+          cands = [(["python", "infer.py"], helptext(["python", "infer.py", "--help"])),
+                   (["moss-tts-nano", "generate"], helptext(["moss-tts-nano", "generate", "--help"]))]
+          def pick(opts, *need, anyof=()):
+              for o in opts:
+                  if all(n in o for n in need) and (not anyof or any(a in o for a in anyof)): return o
+          base = topt = popt = oopt = None
+          for cmd, h in cands:
+              opts = sorted(set(re.findall(r"--[a-z][a-z0-9_-]+", h)), key=len)
+              t = pick(opts, "text") if "--text" not in opts else "--text"
+              p = pick(opts, "prompt", anyof=("audio", "speech", "wav")) or pick(opts, "ref", anyof=("audio", "speech", "wav"))
+              o = pick(opts, "output", anyof=("path", "audio", "wav", "file")) or pick(opts, "output") or pick(opts, "out")
+              print("CMD", cmd, "opts", opts, "->", t, p, o)
+              if t and p and o and base is None: base, topt, popt, oopt = cmd, t, p, o
+          if base is None: sys.exit("could not work out the command line")
+          refs = {"magpie10": os.path.join(root, "ref_magpie10.wav")}
+          for f in sorted(glob.glob("moss/assets/**/*.wav", recursive=True))[:40]:
+              name = os.path.splitext(os.path.basename(f))[0]
+              if re.match(r"(en|he)", name, re.I) and len(refs) < 5: refs["repo_" + name] = os.path.abspath(f)
+          if len(refs) == 1:
+              for f in sorted(glob.glob("moss/assets/**/*.wav", recursive=True))[:2]:
+                  refs["repo_" + os.path.splitext(os.path.basename(f))[0]] = os.path.abspath(f)
+          print("REFS", refs)
+          takes = []
+          for voice, ref in refs.items():
+              for i, p in enumerate(pieces):
+                  wav = os.path.join(root, "out/moss", f"moss_{voice}_{i}.wav")
+                  t0 = time.time()
+                  r = subprocess.run(base + [topt, p["text"], popt, ref, oopt, wav], cwd="moss", capture_output=True, text=True)
+                  dt = time.time() - t0
+                  tail = (r.stdout + r.stderr)[-1500:]
+                  if not os.path.exists(wav):
+                      print("FAILED", voice, i, r.returncode, tail); continue
+                  if not takes: print("FIRST RUN LOG", tail)
+                  takes.append({"file": os.path.basename(wav), "voice": voice, "piece": i, "work_s": round(dt, 2), "timing": "whole CLI call incl. model load"})
+                  print("OK", voice, i, round(dt, 1), flush=True)
+          json.dump({"model": "OpenMOSS-Team/MOSS-TTS-Nano", "input": "plain Hebrew text", "command": base + [topt, popt, oopt], "takes": takes},
+                    open("out/moss/meta.json", "w"), ensure_ascii=False, indent=1)
+          PY
+          du -sh ~/.cache/huggingface 2>/dev/null || true
+          find ~/.cache/huggingface -type f -size +1M -exec ls -laL {} \; 2>/dev/null | awk '{print $5, $9}' | head -20
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moss
+          path: out
+          if-no-files-found: ignore
+
+  pocket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          git clone -q --depth 1 https://github.com/thewh1teagle/pocket-tts-onnx pk && git -C pk log -1 --format=%H
+          pip install -q onnxruntime numpy soundfile "huggingface_hub[cli]"
+          pip install -q pocket-tts-onnx 2>&1 | tail -2 || true
+          python -c "import pocket_tts_onnx" 2>/dev/null || pip install -q "git+https://github.com/thewh1teagle/pocket-tts-onnx" 2>&1 | tail -2 || true
+          python -c "import pocket_tts_onnx" 2>/dev/null || for d in $(find pk -name pyproject.toml -not -path "*/node_modules/*" -exec dirname {} \;); do pip install -q "$d" 2>&1 | tail -2 || true; done
+          python -c "import pocket_tts_onnx, os; print('PKG', os.path.dirname(pocket_tts_onnx.__file__))" || true
+          hf download thewh1teagle/pocket-tts-onnx --local-dir pkm > /dev/null
+          python -c "from huggingface_hub import HfApi; print('REV', HfApi().model_info('thewh1teagle/pocket-tts-onnx').sha)"
+          find pkm -type f -not -path "*/.cache/*" -exec ls -la {} \; | awk '{print $5, $9}'
+      - name: Usage
+        run: |
+          cd pk && git ls-files | grep -v "node_modules" | head -120
+          echo "=== README"; grep -v "^$" README.md | cut -c1-240 | head -170
+          echo "=== hebrew mentions"; grep -rn -i "hebrew\|renikud\|phonemi" --include=*.py --include=*.md --include=*.ts --include=*.js . 2>/dev/null | grep -v node_modules | cut -c1-220 | head -60
+          cd .. && python - <<'PY' || true
+          import inspect, json, os
+          import pocket_tts_onnx as m
+          d = os.path.dirname(m.__file__)
+          for f in sorted(os.listdir(d)):
+              if f.endswith(".py"):
+                  src = open(os.path.join(d, f), encoding="utf-8").read().splitlines()
+                  print("=== SOURCE", f, len(src), "lines")
+                  print("\n".join(l[:200] for l in src[:260]))
+          for f in ("manifest.json", "assets.json"):
+              p = os.path.join("pkm", f)
+              if os.path.exists(p):
+                  j = json.load(open(p, encoding="utf-8"))
+                  def shape(x, depth=0):
+                      if isinstance(x, dict): return {k: shape(v, depth + 1) for k, v in list(x.items())[:40]} if depth < 2 else f"dict({len(x)})"
+                      if isinstance(x, list): return f"list({len(x)})"
+                      return x if not isinstance(x, str) or len(x) < 80 else x[:80] + "..."
+                  print("===", f, json.dumps(shape(j), ensure_ascii=False)[:3000])
+          PY
+      - name: Reference clip
+        run: |
+          curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz
+          cp wavs/q8_0/spk10_0.wav ref_magpie10.wav
+      - name: Generate
+        run: |
+          python - <<'PY'
+          import glob, inspect, json, os, time, traceback
+          import numpy as np, soundfile as sf
+          from pocket_tts_onnx import PocketTTS
+          pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          os.makedirs("out/pocket", exist_ok=True)
+          print("SIG init", inspect.signature(PocketTTS.__init__), "create", inspect.signature(PocketTTS.create))
+          takes = []
+          models = sorted(glob.glob("pkm/*.onnx"))
+          print("MODELS", models)
+          for path in models:
+              tag = os.path.splitext(os.path.basename(path))[0].replace("pocket-tts-", "")
+              if tag in ("encoder", "renikud"): continue
+              try:
+                  tts = PocketTTS(path)
+              except Exception:
+                  print("LOAD FAILED", path); traceback.print_exc(limit=3); continue
+              print("LOADED", path, [a for a in dir(tts) if not a.startswith("__")])
+              voices = None
+              for attr in ("voices", "list_voices", "get_voices"):
+                  v = getattr(tts, attr, None)
+                  if v is not None:
+                      voices = list(v() if callable(v) else v); break
+              voices = voices or ["alba", "cosette", "javert", "male1"]
+              print("VOICES", voices)
+              for kind in (("ipa", "text") if "ipa" in tag or tag == "model" else ("text",)):
+                  for voice in voices:
+                      for i, p in enumerate(pieces):
+                          wav = f"out/pocket/pocket_{tag}_{kind}_{voice}_{i}.wav"
+                          try:
+                              t0 = time.time()
+                              samples, sr = tts.create(p[kind], voice=voice)
+                              dt = time.time() - t0
+                          except Exception:
+                              print("FAILED", tag, kind, voice, i); traceback.print_exc(limit=3); break
+                          samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+                          sf.write(wav, samples, sr)
+                          takes.append({"file": os.path.basename(wav), "voice": f"{tag}/{kind}/{voice}", "piece": i, "work_s": round(dt, 2), "timing": "create() only"})
+                          print("OK", tag, kind, voice, i, round(dt, 1), round(len(samples) / sr, 1), flush=True)
+          json.dump({"model": "thewh1teagle/pocket-tts-onnx", "input": "RenikudPlus IPA (ipa) or plain Hebrew (text)", "takes": takes},
+                    open("out/pocket/meta.json", "w"), ensure_ascii=False, indent=1)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocket
+          path: out
+          if-no-files-found: ignore
+
+  publish:
+    needs: [moss, pocket]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Score
+        run: |
+          pip install -q faster-whisper soundfile scipy numpy
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          find out -type f | head -100
+          python - <<'PY'
+          import glob, json, os, subprocess, unicodedata
+          import numpy as np, soundfile as sf
+          from scipy.signal import resample_poly
+          from faster_whisper import WhisperModel
+          pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          asr = WhisperModel("asr", device="cpu", compute_type="int8")
+          def norm(s):
+              s = "".join(c for c in unicodedata.normalize("NFD", s) if "א" <= c <= "ת" or c == " ")
+              return " ".join(s.split())
+          def cer(ref, hyp):
+              r, h = norm(ref).replace(" ", ""), norm(hyp).replace(" ", "")
+              d = list(range(len(h) + 1))
+              for i in range(1, len(r) + 1):
+                  prev, d[0] = d[0], i
+                  for j in range(1, len(h) + 1):
+                      cur = min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1]))
+                      prev, d[j] = d[j], cur
+              return d[len(h)] / max(1, len(r))
+          res = {"runner_cpu": subprocess.run("lscpu | grep 'Model name' | cut -d: -f2", shell=True, capture_output=True, text=True).stdout.strip(),
+                 "cores": os.cpu_count(), "models": {}}
+          for mp in sorted(glob.glob("out/*/meta.json")):
+              meta = json.load(open(mp, encoding="utf-8")); d = os.path.dirname(mp); voices = {}
+              for t in meta["takes"]:
+                  wav, sr = sf.read(os.path.join(d, t["file"]), dtype="float32")
+                  if wav.ndim > 1: wav = wav.mean(axis=1)
+                  segs, _ = asr.transcribe(resample_poly(wav, 16000, sr).astype(np.float32), language="he", beam_size=5)
+                  hyp = " ".join(x.text for x in segs).strip()
+                  t.update(seconds=round(len(wav) / sr, 2), sample_rate=sr, cer=round(cer(pieces[t["piece"]]["text"], hyp), 4),
+                           peak=round(float(np.abs(wav).max()), 3), heard=hyp)
+                  voices.setdefault(t["voice"], []).append(t)
+              meta["summary"] = {v: {"cer": round(float(np.mean([x["cer"] for x in ts])), 4),
+                                     "audio_s": round(sum(x["seconds"] for x in ts), 1),
+                                     "work_per_audio": round(sum(x["work_s"] for x in ts) / max(0.01, sum(x["seconds"] for x in ts)), 2)}
+                                 for v, ts in voices.items()}
+              res["models"][os.path.basename(d)] = meta
+              print(os.path.basename(d), json.dumps(meta["summary"], ensure_ascii=False, indent=1))
+              for v, ts in voices.items(): print("HEARD", v, "|", ts[0]["heard"][:160])
+          json.dump(res, open("results.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          PY
+          (cd out && tar czf ../wavs.tgz .)
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls results.json wavs.tgz || exit 0
+          gh release delete new-models-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create new-models-probe results.json wavs.tgz -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "New models probe" --notes "MOSS-TTS-Nano (Apache-2.0) and pocket-tts-onnx (CC BY 4.0) samples of the test passage with ASR scores. Not the app."
