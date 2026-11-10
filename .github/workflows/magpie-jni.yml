@@ -1,0 +1,64 @@
+name: Magpie bridge test
+
+# Builds magpie-tts.cpp (+ the Hebrew patch) and the JNI bridge for the host, then checks the bridge against magpie-cli
+# (same IPA, voice 10, seed: same samples) and runs the app's whole Magpie path with the GGUF of the magpie-gguf release.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/magpie-jni.yml", "android/magpie/**", "android/engine/src/main/kotlin/com/karianoot/engine/MagpieNative.kt",
+            "android/engine/src/test/kotlin/com/karianoot/engine/MagpieTest.kt"]
+
+permissions:
+  contents: write
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - run: sudo apt-get install -y -q ninja-build > /dev/null
+      - name: Build magpie-tts.cpp + JNI (host)
+        run: android/magpie/build_android.sh --host
+      - name: Model, G2P and the CLI reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          M=mdir; mkdir -p $M/renikud
+          gh release download magpie-gguf -R "$GITHUB_REPOSITORY" -p magpie-he-q8_0.gguf -D $M
+          echo "5d1f2cffa97c6fbc83a53da2bf965d00cb7c4691feedc4dd0960a5e566ac51c4  $M/magpie-he-q8_0.gguf" | sha256sum -c
+          pip install -q huggingface_hub onnxruntime "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus"
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir $M/renikud
+          python - <<'PY'
+          from renikud_onnx import G2P
+          g = G2P("mdir/renikud/model_int8.onnx")
+          open("mdir/s0.txt", "w").write(g.phonemize("ערב טוב לכל האוהדים! הערב יש לנו משחק ענק בין ריאל מדריד לברצלונה."))
+          PY
+          cat $M/s0.txt; echo
+          MAGPIE_PRIOR=0 android/magpie/build/host/magpie-cli say --model $M/magpie-he-q8_0.gguf --text "$(cat $M/s0.txt)" \
+            --lang he --speaker 10 --seed 7 --threads 4 --output $M/cli_s0.wav 2>&1 | tail -3
+      - name: Bridge test (Kotlin -> JNI -> magpie-tts.cpp)
+        run: |
+          export KARIANOOT_MAGPIE=$PWD/mdir
+          set -o pipefail
+          gradle -p android :engine:test --tests 'com.karianoot.engine.MagpieTest' --no-daemon -i \
+            "-Pkarianoot.magpiejni=$PWD/android/magpie/build/host/libmagpiejni.so" 2>&1 | grep -E "CHECK|FAIL|PASS|SKIPPED|Exception|expected|BUILD|Error|SIGSEGV" | head -60
+      - name: Publish samples
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd mdir && ls *.wav 2>/dev/null && tar czf ../magpie_jni.tgz *.wav s0.txt && cd .. || exit 0
+          gh release delete magpie-jni -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create magpie-jni magpie_jni.tgz -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Magpie bridge samples" --notes "CLI vs JNI and the app pipeline (voice 10). Not the app."

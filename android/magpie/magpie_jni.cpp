@@ -4,9 +4,11 @@
 #include <jni.h>
 
 #include <atomic>
+#include <cstdlib>
 #include <cstdint>
 #include <exception>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -97,6 +99,8 @@ extern "C" {
 JNIEXPORT jlong JNICALL Java_com_karianoot_engine_MagpieNative_load(JNIEnv * env, jclass, jstring path) {
     return guarded(env, (jlong) 0, [&]() -> jlong {
         g_cancel = false;
+        // Attention prior off unless the caller's environment says otherwise: with it the Hebrew CER rose 0.9% -> 7.8%.
+        setenv("MAGPIE_PRIOR", "0", 0);
         return (jlong) magpie_tts_load(utf8(env, path));
     });
 }

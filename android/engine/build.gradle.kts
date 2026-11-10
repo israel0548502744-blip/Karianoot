@@ -25,10 +25,12 @@ tasks.test {
     environment("KARIANOOT_MODELS", System.getenv("KARIANOOT_MODELS") ?: "")
     environment("KARIANOOT_GOLDEN", System.getenv("KARIANOOT_GOLDEN") ?: "")
     environment("KARIANOOT_QWEN", System.getenv("KARIANOOT_QWEN") ?: "")
+    environment("KARIANOOT_MAGPIE", System.getenv("KARIANOOT_MAGPIE") ?: "")
     environment("KARIANOOT_STRETCH", System.getenv("KARIANOOT_STRETCH") ?: "")
     environment("KARIANOOT_JOIN", System.getenv("KARIANOOT_JOIN") ?: "")
     environment("KARIANOOT_TAKES", System.getenv("KARIANOOT_TAKES") ?: "")
     (project.findProperty("karianoot.qwenjni") as String?)?.let { systemProperty("karianoot.qwenjni", it) }
+    (project.findProperty("karianoot.magpiejni") as String?)?.let { systemProperty("karianoot.magpiejni", it) }
     testLogging { events("passed", "failed", "standard_out", "standard_error"); showStandardStreams = true }
     maxHeapSize = "6g"
 }
