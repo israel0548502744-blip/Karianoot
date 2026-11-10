@@ -1,0 +1,38 @@
+name: Automatic ear
+
+# Does a speech-naturalness predictor (UTMOS, DNSMOS) agree with the user's own picks on the listening page?
+# tools/ear/samples = the synthetic clips the user marked (no personal voices), tools/ear/picks.json = the marks.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/ear.yml", "tools/ear/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  ear:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -q torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -q speechmos librosa numpy onnxruntime
+          git clone -q https://github.com/tarepan/SpeechMOS utmos && git -C utmos checkout -q ed25eacbfa42b99156c36ebec67a733b5dbb9b79
+          mv utmos/speechmos utmos/speechmos_utmos
+          sed -i 's/from speechmos\./from speechmos_utmos./' $(grep -rl "from speechmos\." utmos/speechmos_utmos) || true
+          curl -sL -o utmos.pt https://github.com/tarepan/SpeechMOS/releases/download/v1.0.0/utmos22_strong_step7459_v1.pt
+          sudo apt-get install -y -q ffmpeg > /dev/null
+      - name: Score
+        run: python tools/ear/score.py | tee log.txt
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ear -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create ear scores.json log.txt -R "$GITHUB_REPOSITORY" --prerelease --title "Automatic ear" --notes "Quality predictors vs the user's picks. Not the app."
