@@ -130,8 +130,15 @@ jobs:
       - name: Install
         run: |
           git clone -q --depth 1 https://github.com/thewh1teagle/pocket-tts-onnx pk && git -C pk log -1 --format=%H
-          pip install -q ./pk soundfile "huggingface_hub[cli]" 2>&1 | tail -3
-          pip install -q "git+https://github.com/conikud/conikud-onnx" 2>&1 | tail -3 || true
+          pip install -q soundfile numpy onnxruntime huggingface_hub
+          pip install -q ./pk 2>&1 | tail -15 || true
+          if ! python -c "import pocket_tts_onnx" 2>/dev/null; then
+            # Fall back to the sources plus whatever dependencies install.
+            python -c "import tomllib; print('\n'.join(tomllib.load(open('pk/pyproject.toml','rb'))['project'].get('dependencies', [])))" > deps.txt; cat deps.txt
+            while read -r d; do pip install -q "$d" 2>&1 | tail -2 || true; done < deps.txt
+            echo "PYTHONPATH=$PWD/pk/src" >> "$GITHUB_ENV"
+          fi
+          pip install -q "git+https://github.com/conikud/conikud-onnx" 2>&1 | tail -5 || true
           pip list 2>/dev/null | grep -i "pocket\|conikud\|onnx\|phonem\|espeak" || true
       - name: Reference clip
         run: |
@@ -139,6 +146,7 @@ jobs:
           cp wavs/q8_0/spk10_0.wav ref_magpie10.wav
       - name: Generate
         run: |
+          set +e
           python - <<'PY'
           import glob, inspect, json, os, time, traceback
           import numpy as np, soundfile as sf
@@ -199,8 +207,11 @@ jobs:
           print("=== INFO load_s", load_s, "files", files)
           print("create", inspect.signature(tts.create)); print("DIR", [a for a in dir(tts) if not a.startswith("_")])
           PY
+          rc=$?
           echo "=== examples/hebrew.py"; cut -c1-200 pk/examples/hebrew.py | head -45
           echo "=== USAGE clone/voices"; grep -n -i -A7 "clon\|## voices\|hebrew" pk/docs/USAGE.md | cut -c1-200 | head -70
+          grep -n -A12 "^dependencies\|requires-python" pk/pyproject.toml | head -30
+          exit $rc
       - uses: actions/upload-artifact@v4
         if: always()
         with:
