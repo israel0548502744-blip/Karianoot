@@ -94,6 +94,18 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   keep reference text to one sentence. Qwen ICL ("full clone": style codes + transcript) is wired in the bridge
   (`speakStyled`, tested equal to the CLI) but NOT used: with designed refs 4/5 voices ran away (77-96 s, CER up to 79%).
 
+## Magpie in the app (Nov 10 2026)
+- `magpie-cpp.yml` -> prerelease `magpie-gguf`: `tools/magpie/convert_he.py` (ckpt d0c5e96, codec fc00890) + `android/magpie/magpie_he.patch`
+  (Hebrew char tokenizer) on magpie-tts.cpp 3008ff7. q8_0 (603 MB) CER 0.9% (NeMo 1.0%); q4_k breaks speaker 10 (CER 15%);
+  attention prior hurts (7.8%). 22.05 kHz, temp 0.7, topk 80, cfg 2.5. Work/audio 2.2 on 4 CI cores (phone not measured).
+- App (apk-63): q8_0 pinned by sha256, 10 voices (10 default, 18, 19, 6, 9, 11, 12, 13, 15, 16); `magpie-jni.yml` checks JNI = CLI.
+  Joiner floor per engine (Blue 0.2, Qwen 0.3, Magpie 0.25).
+- Lexicon round 2: ~940 names (England / Spain-Portugal-Italy / rest of world / Israel+terms) checked by phonemizing; prefixed forms
+  that are other words are in PROTECT (שמאלי, מואר, כפפה, מקוון, לטאה...). TextPrep: וי.איי.אר -> VAR, ליגה א'/ב'/ג' -> letter names.
+- Qwen rolled r (`qwen-accent.yml`, prerelease `qwen-accent`): no fix found. Quantization (q4/q8/bf16), language tag, temperature
+  and ICL change nothing; ʁ->χ makes it a fricative but CER 16%. The trill detector also calls Blue (control) 100% rolled, so the
+  numbers are unreliable: the user's ear decides.
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).

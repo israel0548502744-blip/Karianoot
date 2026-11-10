@@ -22,6 +22,7 @@ object TextPrep {
     private val ABBREV = mapOf(
         "ת\"א" to "תל אביב", "ב\"ש" to "באר שבע", "פ\"ת" to "פתח תקווה", "ר\"ג" to "רמת גן", "ק\"ש" to "קריית שמונה",
     )
+    private val LEAGUE = mapOf('א' to "אָלֶף", 'ב' to "בֵּית", 'ג' to "גִּימֶל", 'ד' to "דָּלֶת")
     private const val HEB = "\\u05D0-\\u05EA"
 
     fun apply(text: String): String {
@@ -49,6 +50,10 @@ object TextPrep {
         }
         // מ.ס. אשדוד: the dots would also split the sentence there.
         t = Regex("(?<![$HEB])מ\\.ס\\.?(?![$HEB])").replace(t, "אֶם אֶס")
+        // וי.איי.אר (VAR spelled out in Hebrew letters): the dots would split the sentence.
+        t = Regex("(?<![$HEB])([ובלמה]?)-?וי[.\\s]?איי[.\\s]?אר\\.?(?![$HEB])").replace(t) { it.groupValues[1] + "וָאר" }
+        // ליגה א'/ב'/ג': the letter is a name (the G2P read ג' as "dʒa").
+        t = Regex("(ליג[הת])\\s+([אבגד])'(?![$HEB'])").replace(t) { it.groupValues[1] + " " + LEAGUE.getValue(it.groupValues[2][0]) }
         for ((k, v) in ABBREV) t = Regex("(?<![$HEB])([ובלמה]?)${Regex.escape(k)}(?![$HEB])").replace(t) { it.groupValues[1] + v }
         // A lone X is the draw (1X2).
         t = Regex("(?<![A-Za-z\\d])X(?![A-Za-z\\d])").replace(t, "איקס")

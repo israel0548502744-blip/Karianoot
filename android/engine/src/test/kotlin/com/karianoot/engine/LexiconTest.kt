@@ -33,6 +33,27 @@ class LexiconTest {
         assertEquals("נאמבר וואן", Lexicon.apply("נאמבר וואן"))
         assertEquals("lelijˈon", Lexicon.apply("לליון"))
         assertEquals("betˈeku", Lexicon.apply("בתיקו"))
+        // Ordinary words behind names added in the big lexicon round: שמאלי (left, not ש+מאלי), מואר (lit, not
+        // מ+ואר), כפפה (glove, not כ+פפה), מקוון (online), לטאה (lizard), מוטורס, שפירו.
+        assertEquals("בצד השמאלי", Lexicon.apply("בצד השמאלי"))
+        assertEquals("חדר מואר", Lexicon.apply("חדר מואר"))
+        assertEquals("כפפה", Lexicon.apply("כפפה"))
+        assertEquals("מקוון", Lexicon.apply("מקוון"))
+        assertEquals("לטאה", Lexicon.apply("לטאה"))
+        assertEquals("ג'נרל מוטורס", Lexicon.apply("ג'נרל מוטורס"))
+        assertEquals("שפירו", Lexicon.apply("שפירו"))
+    }
+
+    @Test fun bigRoundNames() {
+        assertEquals("ʔˈal nˈaseʁ", Lexicon.apply("אל-נאסר"))
+        assertEquals("lˈuis skˈeli", Lexicon.apply("לואיס-סקלי"))
+        assertEquals("luʔˈis", Lexicon.apply("לואיס"))
+        assertEquals("את vˈaʁ", Lexicon.apply("את ואר"))
+        assertEquals("lemˈali", Lexicon.apply("למאלי"))
+        assertEquals("ʒuʔˈau", Lexicon.apply("ז'ואאו"))
+        assertEquals("bundeslˈiɡa", Lexicon.apply("בונדסליגה"))
+        assertEquals("של pˈepe", Lexicon.apply("של פפה"))
+        assertEquals("mˈalmo", Lexicon.apply("מאלמו"))
     }
 
     @Test fun prefixSounds() {
