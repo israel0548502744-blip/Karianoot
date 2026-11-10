@@ -207,7 +207,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.AutoAwesome, null, tint = C.Gold, modifier = Modifier.size(26.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("כדי להתחיל, מורידים פעם אחת את מנוע ההגייה, ואז מודל קולות: Qwen (1.5GB, הכי טבעי) או Blue 2.5 (270MB, מהיר).",
+                    Text("כדי להתחיל, מורידים פעם אחת את מנוע ההגייה, ואז מודל קולות: Magpie (600MB, קולות טבעיים מאוד), Qwen (1.5GB) או Blue 2.5 (270MB, הכי מהיר).",
                         color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 }
                 GoldButton("להורדת המודלים", Modifier.fillMaxWidth(), icon = Icons.Rounded.Download, onClick = openModels)
@@ -272,9 +272,9 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         }
 
         Section(Modifier.enter(4), title = "כיוונון") {
-            val isQwen = voice?.modelId == Catalog.qwen.id
+            val isQwen = voice?.modelId == Catalog.qwen.id || voice?.modelId == Catalog.magpie.id
             LabeledSlider("מהירות", "×%.2f".format(speed), speed, 0.7f..1.4f) { speed = it }
-            if (isQwen) Text("ב-Qwen הרגש והאיכות נקבעים לבד; המהירות משנה רק את הקצב, לא את גובה הקול.", color = C.Faint, fontSize = 12.sp)
+            if (isQwen) Text("ב-${if (voice?.modelId == Catalog.magpie.id) "Magpie" else "Qwen"} הרגש והאיכות נקבעים לבד; המהירות משנה רק את הקצב, לא את גובה הקול.", color = C.Faint, fontSize = 12.sp)
             LabeledSlider("הפסקה בין משפטים", if (pause < 0.05f) "טבעית" else "%.2f שנ׳".format(pause), pause, 0f..0.8f) {
                 pause = if (it < 0.05f) 0f else it
             }
@@ -336,10 +336,10 @@ private fun VoiceChip(v: VoiceInfo, selected: Boolean, onClick: () -> Unit) {
     ) {
         Box(Modifier.size(44.dp).clip(CircleShape).background(if (selected) C.GoldButton else Brush.linearGradient(listOf(Color(0x33FFF4DC), Color(0x11FFF4DC)))),
             contentAlignment = Alignment.Center) {
-            Text(v.name.split(" ").last().take(2), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text((Regex("\\d+").find(v.name)?.value ?: v.name.split(" ").last()).take(2), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         }
         Spacer(Modifier.height(6.dp))
-        Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, textAlign = TextAlign.Center)
         Text(if (v.personalOnly) "⚠ אישי" else v.note.ifEmpty { if (v.female) "אישה" else "גבר" }, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
     }
 }
@@ -645,7 +645,7 @@ private fun ModelCard(m: ModelInfo, state: ModelState, models: Models, modifier:
             }
             is ModelState.Downloading -> {
                 Row {
-                    Text(if (state.paused) "ממתין לרשת…" else "מוריד…", color = C.Text, modifier = Modifier.weight(1f))
+                    Text(if (state.checking) "בודק שהקובץ תקין…" else if (state.paused) "ממתין לרשת…" else "מוריד…", color = C.Text, modifier = Modifier.weight(1f))
                     Text("${formatSize(state.done)} / ${formatSize(state.total)}", color = C.Gold, fontSize = 13.sp)
                 }
                 GoldProgress(state.done.toFloat() / state.total)
@@ -690,7 +690,7 @@ fun AboutScreen(app: KarianootApp) {
                 Column {
                     Text(m.title, color = C.Gold, fontWeight = FontWeight.SemiBold)
                     Text("${m.credit} · רישיון ${m.license}", color = C.Sub, fontSize = 13.sp)
-                    Text("huggingface.co/${m.repo}", color = C.Faint, fontSize = 12.sp, textAlign = TextAlign.Start)
+                    Text(m.home, color = C.Faint, fontSize = 12.sp, textAlign = TextAlign.Start)
                 }
             }
             Text("ONNX Runtime — Microsoft, רישיון MIT", color = C.Sub, fontSize = 13.sp)
@@ -711,6 +711,7 @@ fun AboutScreen(app: KarianootApp) {
 private class VoiceGroup(val title: String, val subtitle: String, val missing: String, val mine: Boolean = false, val match: (VoiceInfo) -> Boolean)
 
 private val VOICE_GROUPS = listOf(
+    VoiceGroup("Magpie", "קולות עבריים טבעיים", "להורדת Magpie (600MB) במסך המודלים") { it.modelId == "magpie_he" },
     VoiceGroup("Qwen · שדרנים ומגישים", "הכי טבעי וחי · איטי יותר", "להורדת Qwen (1.5GB) במסך המודלים") {
         it.modelId == "qwen_he" && it.customFile == null && it.asset?.contains("q_d_") == true
     },

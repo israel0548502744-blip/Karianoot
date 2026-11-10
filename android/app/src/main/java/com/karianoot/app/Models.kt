@@ -13,7 +13,7 @@ import java.io.File
 
 sealed interface ModelState {
     data object Missing : ModelState
-    data class Downloading(val done: Long, val total: Long, val paused: Boolean = false) : ModelState
+    data class Downloading(val done: Long, val total: Long, val paused: Boolean = false, val checking: Boolean = false) : ModelState
     data object Ready : ModelState
     data class Failed(val reason: String) : ModelState
 }
@@ -39,12 +39,46 @@ class Models(private val ctx: Context) {
     private fun stagingFile(m: ModelInfo, f: ModelFile) = File(ctx.getExternalFilesDir(null), "$staging/${m.id}/${f.path}")
     private fun key(m: ModelInfo, f: ModelFile) = "${m.id}/${f.path}"
 
+    /** In place: the right size, and for a file pinned by sha256, checked (a marker holds the hash it matched). */
+    private fun installed(m: ModelInfo, f: ModelFile): Boolean {
+        val t = target(m, f)
+        if (t.length() != f.size) return false
+        return f.sha256 == null || runCatching { File(t.path + ".sha256").readText().trim() == f.sha256 }.getOrDefault(false)
+    }
+
     private fun stateNow(m: ModelInfo): ModelState =
-        if (m.files.all { target(m, it).length() == it.size }) ModelState.Ready else ModelState.Missing
+        if (m.files.all { installed(m, it) }) ModelState.Ready else ModelState.Missing
+
+    /** Files being checked against their sha256 (off the main thread), and the outcome of a failed check. */
+    private val checking = java.util.Collections.synchronizedSet(HashSet<String>())
+    private val badHash = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun sha256(f: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { i -> val b = ByteArray(1 shl 20); while (true) { val n = i.read(b); if (n < 0) break; md.update(b, 0, n) } }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** Moves a finished download into place; a file pinned by sha256 is checked first, in the background. */
+    private fun install(m: ModelInfo, f: ModelFile, s: File) {
+        val t = target(m, f)
+        fun move() { t.parentFile?.mkdirs(); t.delete(); if (!s.renameTo(t)) { s.copyTo(t, overwrite = true); s.delete() } }
+        if (f.sha256 == null) { move(); return }
+        if (!checking.add(key(m, f))) return
+        Thread {
+            try {
+                if (sha256(s) == f.sha256) { move(); File(t.path + ".sha256").writeText(f.sha256) }
+                else { s.delete(); badHash[m.id] = "הקובץ שירד פגום (בדיקת תקינות נכשלה): ${f.path}. נסו שוב." }
+            } catch (e: Exception) {
+                badHash[m.id] = "בדיקת הקובץ נכשלה: ${e.message}"
+            } finally { checking.remove(key(m, f)); refresh() }
+        }.start()
+    }
 
     fun start(m: ModelInfo) {
+        badHash.remove(m.id)
         for (f in m.files) {
-            if (target(m, f).length() == f.size) continue
+            if (installed(m, f) || key(m, f) in checking) continue
             if (prefs.contains(key(m, f)) && statusOf(prefs.getLong(key(m, f), -1)) in RUNNING) continue
             val out = stagingFile(m, f)
             out.parentFile?.mkdirs()
@@ -92,9 +126,10 @@ class Models(private val ctx: Context) {
             var anyActive = false
             var paused = false
             var failure: String? = null
+            var check = false
             for (f in m.files) {
-                val t = target(m, f)
-                if (t.length() == f.size) { done += f.size; continue }
+                if (installed(m, f)) { done += f.size; continue }
+                if (key(m, f) in checking) { done += f.size; anyActive = true; check = true; continue }
                 val id = prefs.getLong(key(m, f), -1)
                 if (id < 0) continue
                 dm.query(DownloadManager.Query().setFilterById(id)).use { c ->
@@ -105,9 +140,9 @@ class Models(private val ctx: Context) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             val s = stagingFile(m, f)
                             if (s.length() == f.size) {
-                                t.parentFile?.mkdirs(); t.delete()
-                                if (!s.renameTo(t)) { s.copyTo(t, overwrite = true); s.delete() }
+                                install(m, f, s)
                                 done += f.size
+                                if (f.sha256 != null) { anyActive = true; check = true }
                             } else {
                                 failure = "קובץ לא שלם: ${f.path}"
                                 s.delete()
@@ -124,9 +159,10 @@ class Models(private val ctx: Context) {
                 }
             }
             map[m.id] = when {
-                m.files.all { target(m, it).length() == it.size } -> ModelState.Ready
-                anyActive -> ModelState.Downloading(done, m.size, paused)
+                m.files.all { installed(m, it) } -> ModelState.Ready
+                anyActive -> ModelState.Downloading(done, m.size, paused, check)
                 failure != null -> ModelState.Failed(failure!!)
+                badHash[m.id] != null -> ModelState.Failed(badHash[m.id]!!)
                 else -> ModelState.Missing
             }
         }

@@ -7,6 +7,7 @@ import com.karianoot.engine.BlueTts
 import com.karianoot.engine.BlueVoice
 import com.karianoot.engine.HebrewG2P
 import com.karianoot.engine.Joiner
+import com.karianoot.engine.MagpieTts
 import com.karianoot.engine.Pronounce
 import com.karianoot.engine.QwenTts
 import com.karianoot.engine.TextPrep
@@ -44,10 +45,11 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     private val index = File(creationsDir, "index.json")
 
     private var qwen: QwenTts? = null
+    private var magpie: MagpieTts? = null
     @Volatile private var cancelled = false
 
     /** Asks the running narration to stop. */
-    fun cancel() { cancelled = true; qwen?.cancel() }
+    fun cancel() { cancelled = true; qwen?.cancel(); magpie?.cancel() }
     fun wasCancelled() = cancelled
 
     /** Progress callback that also stops the work between pieces when [cancel] was asked. */
@@ -62,7 +64,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
      * Seconds of work per second of audio, measured on this phone per model (smoothed), or null before the first
      * narration with that model. Used for the time estimate in the studio.
      */
-    fun workPerSecond(modelId: String): Float? = prefs.getFloat(modelId, -1f).takeIf { it > 0f }
+    fun workPerSecond(modelId: String): Float? = prefs.getFloat(modelId, -1f).takeIf { it > 0f } ?: FIRST_GUESS[modelId]
 
     /** Rough time for [text] with [voice]: ~13 characters per second of speech. Null when not measured yet. */
     fun estimateSeconds(text: String, voice: VoiceInfo, speed: Float = 1f): Float? {
@@ -74,18 +76,20 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     private fun recordSpeed(modelId: String, workSec: Float, audioSec: Float) {
         if (audioSec < 1f) return
         val r = workSec / audioSec
-        val old = workPerSecond(modelId)
+        val old = prefs.getFloat(modelId, -1f).takeIf { it > 0f }
         prefs.edit().putFloat(modelId, if (old == null) r else 0.6f * old + 0.4f * r).apply()
     }
 
     /** The voice as the library shows it: name and model, since Qwen and Blue share names. */
-    private fun label(v: VoiceInfo) = v.name + " · " + when (v.modelId) { Catalog.qwen.id -> "Qwen"; "blue_v3" -> "V3"; else -> "2.5" }
+    private fun label(v: VoiceInfo) = v.name + " · " + when (v.modelId) { Catalog.qwen.id -> "Qwen"; Catalog.magpie.id -> "Magpie"; "blue_v3" -> "V3"; else -> "2.5" }
 
     /** One loaded voice, whatever the model: splits the text into pieces and speaks each. */
     private interface Engine {
         val sampleRate: Int
         /** The model's own sentence pause (seconds), for texts too short to measure it on. */
         val naturalPause: Float
+        /** The shortest sentence pause for this model (the Joiner's floor). */
+        val minPause: Float
         /** [retake]: a new, different take (Qwen samples instead of its deterministic greedy pass). */
         fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit = {}, retake: Boolean = false): List<BlueTts.Part>
     }
@@ -103,19 +107,45 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         qwen?.let { return it }
         onStage("טוען את Qwen (כמה שניות)…", 0f)
         tts?.close(); tts = null; ttsModel = null   // one big model in memory at a time
+        magpie?.close(); magpie = null
         val dir = models.dir(Catalog.qwen)
         return QwenTts(File(dir, "qwen-talker-1.7b-base-Q4_K_M.gguf").path, File(dir, "qwen-tokenizer-12hz-Q4_K_M.gguf").path, g,
             threads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)).also { qwen = it }
     }
 
+    private fun loadMagpie(onStage: (String, Float) -> Unit): MagpieTts {
+        val g = loadG2p(onStage)
+        magpie?.let { return it }
+        onStage("טוען את Magpie…", 0f)
+        tts?.close(); tts = null; ttsModel = null   // one big model in memory at a time
+        qwen?.close(); qwen = null
+        // 4 threads: the small per-step graphs get slower with more (magpie-tts.cpp's measurements); to tune on the phone.
+        return MagpieTts(File(models.dir(Catalog.magpie), Catalog.MAGPIE_FILE).path, g, threads = 4).also { magpie = it }
+    }
+
     /** Loads (or reuses) the engine for [voice] and its style. Call under [lock]. */
     private fun engineFor(voice: VoiceInfo, onStage: (String, Float) -> Unit): Engine {
+        if (voice.modelId == Catalog.magpie.id) {
+            val m = loadMagpie(onStage)
+            return object : Engine {
+                override val sampleRate = m.sampleRate
+                override val naturalPause = MagpieTts.NATURAL_PAUSE
+                override val minPause = MagpieTts.MIN_PAUSE
+                // Every take is sampled (temperature 0.7), so a retake is simply a new random take.
+                // No speed control in the model: pieces are time-stretched (pitch kept), as for Qwen.
+                override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) =
+                    m.synthesizeParts(text, voice.speaker, onProgress, cancelled = { cancelled }).map {
+                        BlueTts.Part(it.text, com.karianoot.engine.TimeStretch.stretch(it.samples, opt.speed, m.sampleRate))
+                    }
+            }
+        }
         if (voice.modelId == Catalog.qwen.id) {
             val q = loadQwen(onStage)
             val spk = QwenTts.readSpk((voice.customFile ?: assetFile(voice.asset!!)).readBytes())
             return object : Engine {
                 override val sampleRate = q.sampleRate
                 override val naturalPause = QwenTts.NATURAL_PAUSE
+                override val minPause = QwenTts.MIN_PAUSE
                 // Greedy decoding (0 word errors in the tests) gives the same audio every time, so a retake samples
                 // at temperature 0.6, measured as accurate as greedy (ASR, 3 voices x 2 seeds).
                 // Qwen has no speed control: pieces are time-stretched (pitch kept) to the chosen speed.
@@ -127,6 +157,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         }
         val g = loadG2p(onStage)
         qwen?.close(); qwen = null
+        magpie?.close(); magpie = null
         // Voices made from a recording take their duration from Blue 2.5's z_ref predictor.
         val dpRef = File(models.dir(Catalog.clone), "duration_predictor.onnx").takeIf { voice.modelId == "blue_25" && it.length() == 2_151_232L }
         val key = voice.modelId + (if (dpRef != null) "+ref" else "")
@@ -142,6 +173,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         return object : Engine {
             override val sampleRate = engine.sampleRate
             override val naturalPause = BlueTts.NATURAL_PAUSE
+            override val minPause = BlueTts.MIN_PAUSE
             override fun parts(text: String, opt: BlueTts.Options, onProgress: (Float) -> Unit, retake: Boolean) = engine.synthesizeParts(text, v, opt, onProgress = onProgress)
         }
     }
@@ -151,7 +183,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
      * own when 0), edges trimmed without clipping, loudness evened out, peak-limited.
      */
     private fun join(parts: List<BlueTts.Part>, pause: Float, engine: Engine) =
-        Joiner.join(parts.map { it.samples }, parts.map { it.text }, engine.sampleRate, pause, engine.naturalPause)
+        Joiner.join(parts.map { it.samples }, parts.map { it.text }, engine.sampleRate, pause, engine.naturalPause, floor = engine.minPause)
 
     /** A Qwen voice print from a recording (44.1 kHz mono), for "make a voice from a recording". */
     suspend fun qwenVoicePrint(wav44k: FloatArray): FloatArray = withContext(Dispatchers.Default) {
@@ -206,7 +238,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val (old, rate) = Wav.read(c.file)
                 // The retake gets the same sentence pauses as the recording and the loudness of the take it replaces.
                 val ps = engine.parts(span.text, opt, retake = true)
-                var fresh = Joiner.join(ps.map { it.samples }, ps.map { it.text }, rate, c.pause, engine.naturalPause).samples
+                var fresh = Joiner.join(ps.map { it.samples }, ps.map { it.text }, rate, c.pause, engine.naturalPause, floor = engine.minPause).samples
                 val target = Joiner.level(old.copyOfRange(span.start.coerceIn(0, old.size), span.end.coerceIn(0, old.size)), rate)
                 val now = Joiner.level(fresh, rate)
                 if (target > 0 && now > 0) {
@@ -287,8 +319,10 @@ class Speech(private val ctx: Context, private val models: Models, private val f
 
     companion object {
         const val KEEP = 30
+        /** Work per second of audio before this phone has measured a model: Magpie measured 2.2 on a 4-core CI runner. */
+        val FIRST_GUESS = mapOf(Catalog.magpie.id to 2.2f)
         const val PREVIEW_TEXT = "ערב טוב לכל האוהדים! ככה אני נשמע, והיחס הערב פשוט מטורף."
     }
 
-    fun release() { tts?.close(); qwen?.close(); g2p?.close(); tts = null; qwen = null; g2p = null; ttsModel = null }
+    fun release() { tts?.close(); qwen?.close(); magpie?.close(); g2p?.close(); tts = null; qwen = null; magpie = null; g2p = null; ttsModel = null }
 }

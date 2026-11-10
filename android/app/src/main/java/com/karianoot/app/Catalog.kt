@@ -1,9 +1,13 @@
 package com.karianoot.app
 
-/** One file of a model, pinned to an exact Hugging Face revision. */
-data class ModelFile(val path: String, val size: Long, val repo: String? = null, val revision: String? = null)
+/**
+ * One file of a model, pinned to an exact Hugging Face revision, or to a direct [url] (a GitHub release of this app's
+ * repo) checked against its [sha256] after the download.
+ */
+data class ModelFile(val path: String, val size: Long, val repo: String? = null, val revision: String? = null,
+                     val url: String? = null, val sha256: String? = null)
 
-enum class ModelKind { G2P, BLUE, CLONE, QWEN, SOON }
+enum class ModelKind { G2P, BLUE, CLONE, QWEN, MAGPIE, SOON }
 
 data class ModelInfo(
     val id: String,
@@ -15,9 +19,11 @@ data class ModelInfo(
     val license: String,
     val credit: String,
     val files: List<ModelFile> = emptyList(),
+    /** Where it comes from, for the About screen. */
+    val home: String = "huggingface.co/$repo",
 ) {
     val size: Long get() = files.sumOf { it.size }
-    fun url(f: ModelFile) = "https://huggingface.co/${f.repo ?: repo}/resolve/${f.revision ?: revision}/${f.path.substringAfterLast("@")}"
+    fun url(f: ModelFile) = f.url ?: "https://huggingface.co/${f.repo ?: repo}/resolve/${f.revision ?: revision}/${f.path.substringAfterLast("@")}"
 }
 
 data class VoiceInfo(
@@ -32,6 +38,8 @@ data class VoiceInfo(
     val needs: List<String> = listOf(modelId),
     /** Default liveliness (start-noise scale, [com.karianoot.engine.BlueTts.Options.temperature]). */
     val liveliness: Float = 1.0f,
+    /** Magpie: the model's baked voice (speaker index). */
+    val speaker: Int = -1,
 ) {
     /** Denoising steps for "fast / good / best". Blue V3 needs more (measured: 8 steps 5% errors, 16 steps 0.6%). */
     val steps: IntArray get() = if (modelId == "blue_v3") intArrayOf(12, 16, 24) else intArrayOf(5, 10, 16)
@@ -118,19 +126,51 @@ object Catalog {
         ),
     )
 
+    /**
+     * Magpie TTS Multilingual 357M (NVIDIA) fine-tuned on Hebrew by notmax123, converted to one GGUF (q8_0; q4_k broke
+     * voice 10) for magpie-tts.cpp, published as the magpie-gguf prerelease of this repo (magpie-gguf.yml).
+     */
+    val magpie = ModelInfo(
+        id = "magpie_he", kind = ModelKind.MAGPIE,
+        title = "Magpie עברית",
+        subtitle = "קולות עבריים טבעיים מאוד (בבדיקה: 99% מהמילים נשמעו נכון). קטן ומהיר יותר מ-Qwen.",
+        license = "NVIDIA Open Model License",
+        credit = "Magpie TTS Multilingual 357M (NVIDIA, NVIDIA Open Model License), Hebrew fine-tune by notmax123; " +
+            "engine magpie-tts.cpp (MIT)",
+        home = "huggingface.co/notmax123/magpie_tts_multilingual_357m-he · github.com/mudler/magpie-tts.cpp",
+        files = listOf(ModelFile(MAGPIE_FILE, 603_088_864,
+            url = "https://github.com/israel0548502744-blip/Karianoot/releases/download/magpie-gguf/$MAGPIE_FILE",
+            sha256 = "5d1f2cffa97c6fbc83a53da2bf965d00cb7c4691feedc4dd0960a5e566ac51c4")),
+    )
+    const val MAGPIE_FILE = "magpie-he-q8_0.gguf"
+
     /** Shown as "coming soon" so the plan is visible inside the app. */
     val soon = listOf(
         ModelInfo("noa", "נועה (Piper)", "קול נשי מהיר מאוד.", ModelKind.SOON, license = "CC BY 4.0", credit = "thewh1teagle"),
     )
 
-    val downloadable = listOf(g2p, qwen, blue25, blueV3, clone)
+    val downloadable = listOf(g2p, magpie, qwen, blue25, blueV3, clone)
     val all = downloadable + soon
 
     private fun q(id: String, name: String, note: String, female: Boolean, personal: Boolean = false) =
         VoiceInfo("q_$id", "qwen_he", "", name, note, female, personalOnly = personal,
             asset = "qwen/q_$id.spk", needs = listOf("g2p", "qwen_he"))
 
+    private fun m(speaker: Int, name: String, note: String, female: Boolean) =
+        VoiceInfo("m_$speaker", "magpie_he", "", name, note, female, speaker = speaker, needs = listOf("g2p", "magpie_he"))
+
     val voices = listOf(
+        // Magpie, named as on the picker page; the user's favourite (female5) first, then the two they loved.
+        m(10, "אישה 5", "מומלץ", female = true),
+        m(19, "קול 3", "", female = false),     // F0 ~140 Hz, formants with the male voices
+        m(18, "קול 2", "", female = true),
+        m(6, "אישה 1 (עברית)", "", female = true),
+        m(9, "אישה 4", "", female = true),
+        m(11, "גבר 1", "", female = false),
+        m(12, "גבר 1 (עברית)", "", female = false),
+        m(13, "גבר 2", "", female = false),
+        m(15, "גבר 4", "", female = false),
+        m(16, "גבר 5", "", female = false),
         // Designed from a text description with VoxCPM2 (Apache-2.0): synthetic voices, no real person behind them.
         q("d_commentator", "שדרן", "מעוצב", female = false),
         q("d_radio", "קריין רדיו", "מעוצב", female = false),
