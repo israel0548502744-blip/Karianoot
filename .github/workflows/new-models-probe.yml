@@ -66,12 +66,16 @@ jobs:
           refs = {"magpie10": os.path.join(root, "ref_magpie10.wav")}
           for f in sorted(glob.glob("moss/assets/**/*.wav", recursive=True))[:40]:
               name = os.path.splitext(os.path.basename(f))[0]
-              if re.match(r"(en|he)", name, re.I) and len(refs) < 5: refs["repo_" + name] = os.path.abspath(f)
+              if re.match(r"(en|he)", name, re.I) and name not in ("en_3", "en_6") and len(refs) < 3: refs["repo_" + name] = os.path.abspath(f)
           if len(refs) == 1:
               for f in sorted(glob.glob("moss/assets/**/*.wav", recursive=True))[:2]:
                   refs["repo_" + os.path.splitext(os.path.basename(f))[0]] = os.path.abspath(f)
           print("REFS", refs)
           takes = []
+          # A two-word call: about the fixed cost (start, model load, prompt encoding) of each CLI call.
+          t0 = time.time()
+          subprocess.run(base + [topt, "כן, טוב.", popt, refs["magpie10"], oopt, os.path.join(root, "short.wav")], cwd="moss", capture_output=True, text=True)
+          overhead = round(time.time() - t0, 2); print("OVERHEAD", overhead)
           for voice, ref in refs.items():
               for i, p in enumerate(pieces):
                   wav = os.path.join(root, "out/moss", f"moss_{voice}_{i}.wav")
@@ -84,10 +88,28 @@ jobs:
                   if not takes: print("FIRST RUN LOG", tail)
                   takes.append({"file": os.path.basename(wav), "voice": voice, "piece": i, "work_s": round(dt, 2), "timing": "whole CLI call incl. model load"})
                   print("OK", voice, i, round(dt, 1), flush=True)
-          json.dump({"model": "OpenMOSS-Team/MOSS-TTS-Nano", "input": "plain Hebrew text", "command": base + [topt, popt, oopt], "takes": takes},
+          # One sentence per call (joined with 0.2 s), in case long input is what breaks the Hebrew.
+          import numpy as np, soundfile as sf
+          for i, p in enumerate(pieces):
+              parts, dt, sr = [], 0.0, 48000
+              for k, sent in enumerate(re.findall(r"[^.!?]+[.!?]", p["text"])):
+                  tmp = os.path.join(root, f"s_{i}_{k}.wav")
+                  t0 = time.time()
+                  subprocess.run(base + [topt, sent.strip(), popt, refs["magpie10"], oopt, tmp], cwd="moss", capture_output=True, text=True)
+                  dt += time.time() - t0 - overhead
+                  if os.path.exists(tmp):
+                      w, sr = sf.read(tmp, dtype="float32"); parts += [w, np.zeros((int(sr * 0.2),) + w.shape[1:], dtype="float32")]
+              if parts:
+                  name = f"moss_magpie10_sentences_{i}.wav"
+                  sf.write(os.path.join(root, "out/moss", name), np.concatenate(parts), sr)
+                  takes.append({"file": name, "voice": "magpie10_sentences", "piece": i, "work_s": round(dt + overhead, 2), "timing": "sum of CLI calls minus load, plus one load"})
+                  print("OK sentences", i, round(dt, 1), flush=True)
+          print("HELP", cands[0][1][-2500:])
+          json.dump({"model": "OpenMOSS-Team/MOSS-TTS-Nano", "input": "plain Hebrew text", "command": base + [topt, popt, oopt],
+                     "cli_overhead_s": overhead, "takes": takes},
                     open("out/moss/meta.json", "w"), ensure_ascii=False, indent=1)
           PY
-          du -sh ~/.cache/huggingface 2>/dev/null || true
+          ls moss; grep -n -i "onnx\|gguf\|ggml\|android\|mobile" moss/README.md | cut -c1-220 | head -25
           find ~/.cache/huggingface -type f -size +1M -exec ls -laL {} \; 2>/dev/null | awk '{print $5, $9}' | head -20
       - uses: actions/upload-artifact@v4
         if: always()
@@ -104,42 +126,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Install
         run: |
           git clone -q --depth 1 https://github.com/thewh1teagle/pocket-tts-onnx pk && git -C pk log -1 --format=%H
-          pip install -q onnxruntime numpy soundfile "huggingface_hub[cli]"
-          pip install -q pocket-tts-onnx 2>&1 | tail -2 || true
-          python -c "import pocket_tts_onnx" 2>/dev/null || pip install -q "git+https://github.com/thewh1teagle/pocket-tts-onnx" 2>&1 | tail -2 || true
-          python -c "import pocket_tts_onnx" 2>/dev/null || for d in $(find pk -name pyproject.toml -not -path "*/node_modules/*" -exec dirname {} \;); do pip install -q "$d" 2>&1 | tail -2 || true; done
-          python -c "import pocket_tts_onnx, os; print('PKG', os.path.dirname(pocket_tts_onnx.__file__))" || true
-          hf download thewh1teagle/pocket-tts-onnx --local-dir pkm > /dev/null
-          python -c "from huggingface_hub import HfApi; print('REV', HfApi().model_info('thewh1teagle/pocket-tts-onnx').sha)"
-          find pkm -type f -not -path "*/.cache/*" -exec ls -la {} \; | awk '{print $5, $9}'
-      - name: Usage
-        run: |
-          cd pk && git ls-files | grep -v "node_modules" | head -120
-          echo "=== README"; grep -v "^$" README.md | cut -c1-240 | head -170
-          echo "=== hebrew mentions"; grep -rn -i "hebrew\|renikud\|phonemi" --include=*.py --include=*.md --include=*.ts --include=*.js . 2>/dev/null | grep -v node_modules | cut -c1-220 | head -60
-          cd .. && python - <<'PY' || true
-          import inspect, json, os
-          import pocket_tts_onnx as m
-          d = os.path.dirname(m.__file__)
-          for f in sorted(os.listdir(d)):
-              if f.endswith(".py"):
-                  src = open(os.path.join(d, f), encoding="utf-8").read().splitlines()
-                  print("=== SOURCE", f, len(src), "lines")
-                  print("\n".join(l[:200] for l in src[:260]))
-          for f in ("manifest.json", "assets.json"):
-              p = os.path.join("pkm", f)
-              if os.path.exists(p):
-                  j = json.load(open(p, encoding="utf-8"))
-                  def shape(x, depth=0):
-                      if isinstance(x, dict): return {k: shape(v, depth + 1) for k, v in list(x.items())[:40]} if depth < 2 else f"dict({len(x)})"
-                      if isinstance(x, list): return f"list({len(x)})"
-                      return x if not isinstance(x, str) or len(x) < 80 else x[:80] + "..."
-                  print("===", f, json.dumps(shape(j), ensure_ascii=False)[:3000])
-          PY
+          pip install -q ./pk soundfile "huggingface_hub[cli]" 2>&1 | tail -3
+          pip install -q "git+https://github.com/conikud/conikud-onnx" 2>&1 | tail -3 || true
+          pip list 2>/dev/null | grep -i "pocket\|conikud\|onnx\|phonem\|espeak" || true
       - name: Reference clip
         run: |
           curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz
@@ -149,45 +142,65 @@ jobs:
           python - <<'PY'
           import glob, inspect, json, os, time, traceback
           import numpy as np, soundfile as sf
+          import pocket_tts_onnx as P
           from pocket_tts_onnx import PocketTTS
           pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
           os.makedirs("out/pocket", exist_ok=True)
-          print("SIG init", inspect.signature(PocketTTS.__init__), "create", inspect.signature(PocketTTS.create))
+          t0 = time.time(); tts = PocketTTS.from_pretrained("english-ipa"); load_s = round(time.time() - t0, 1)
+          params = inspect.signature(tts.create).parameters
+          found = {}
+          for a in dir(tts):
+              if "voice" in a.lower() and not a.startswith("__"):
+                  try:
+                      v = getattr(tts, a); v = v() if callable(v) and not inspect.signature(v).parameters else v
+                      if isinstance(v, (list, tuple, dict, set)): found[a] = sorted(map(str, v))
+                  except Exception: pass
+          print("VOICE ATTRS", found)
+          voices = max(found.values(), key=len) if found else ["alba", "cosette", "javert", "male1"]
+          texts = {"renikudplus": [p["ipa"] for p in pieces]}
+          try:
+              texts["conikud"] = [P.phonemize(p["text"], language="he") for p in pieces]
+              print("CONIKUD", texts["conikud"])
+          except Exception:
+              print("CONIKUD FAILED"); traceback.print_exc(limit=4)
+          kw = {"phonemes": True} if "phonemes" in params else {}
           takes = []
-          models = sorted(glob.glob("pkm/*.onnx"))
-          print("MODELS", models)
-          for path in models:
-              tag = os.path.splitext(os.path.basename(path))[0].replace("pocket-tts-", "")
-              if tag in ("encoder", "renikud"): continue
-              try:
-                  tts = PocketTTS(path)
-              except Exception:
-                  print("LOAD FAILED", path); traceback.print_exc(limit=3); continue
-              print("LOADED", path, [a for a in dir(tts) if not a.startswith("__")])
-              voices = None
-              for attr in ("voices", "list_voices", "get_voices"):
-                  v = getattr(tts, attr, None)
-                  if v is not None:
-                      voices = list(v() if callable(v) else v); break
-              voices = voices or ["alba", "cosette", "javert", "male1"]
-              print("VOICES", voices)
-              for kind in (("ipa", "text") if "ipa" in tag or tag == "model" else ("text",)):
-                  for voice in voices:
-                      for i, p in enumerate(pieces):
-                          wav = f"out/pocket/pocket_{tag}_{kind}_{voice}_{i}.wav"
-                          try:
-                              t0 = time.time()
-                              samples, sr = tts.create(p[kind], voice=voice)
-                              dt = time.time() - t0
-                          except Exception:
-                              print("FAILED", tag, kind, voice, i); traceback.print_exc(limit=3); break
-                          samples = np.asarray(samples, dtype=np.float32).reshape(-1)
-                          sf.write(wav, samples, sr)
-                          takes.append({"file": os.path.basename(wav), "voice": f"{tag}/{kind}/{voice}", "piece": i, "work_s": round(dt, 2), "timing": "create() only"})
-                          print("OK", tag, kind, voice, i, round(dt, 1), round(len(samples) / sr, 1), flush=True)
-          json.dump({"model": "thewh1teagle/pocket-tts-onnx", "input": "RenikudPlus IPA (ipa) or plain Hebrew (text)", "takes": takes},
-                    open("out/pocket/meta.json", "w"), ensure_ascii=False, indent=1)
+          def render(label, voice, kind):
+              for i, text in enumerate(texts[kind]):
+                  wav = f"out/pocket/pocket_{kind}_{label}_{i}.wav"
+                  try:
+                      t0 = time.time(); samples, sr = tts.create(text, voice=voice, **kw); dt = time.time() - t0
+                  except Exception:
+                      print("FAILED", kind, label, i); traceback.print_exc(limit=4); return False
+                  samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+                  sf.write(wav, samples, sr)
+                  takes.append({"file": os.path.basename(wav), "voice": f"{kind}/{label}", "piece": i, "work_s": round(dt, 2), "timing": "create() only"})
+                  print("OK", kind, label, i, round(dt, 1), round(len(samples) / sr, 1), flush=True)
+              return True
+          for kind in texts:
+              for voice in voices: render(voice, voice, kind)
+          # Cloning from the reference clip: the path itself, else any method that looks like a voice encoder.
+          ref, cond = "ref_magpie10.wav", None
+          kind = "conikud" if "conikud" in texts else "renikudplus"
+          if not render("clone_magpie10", ref, kind):
+              for a in dir(tts):
+                  if any(k in a.lower() for k in ("clone", "encode", "condition", "voice_from", "load_voice")) and callable(getattr(tts, a)) and not a.startswith("__"):
+                      try:
+                          cond = getattr(tts, a)(ref); print("CLONE VIA", a, type(cond)); break
+                      except Exception as e: print("clone try", a, repr(e)[:200])
+              if cond is not None:
+                  for k in texts: render("clone_magpie10", cond, k)
+          else:
+              for k in texts:
+                  if k != kind: render("clone_magpie10", ref, k)
+          files = {os.path.basename(f): os.path.getsize(f) for f in glob.glob(os.path.expanduser("~/.cache/**/*"), recursive=True) if os.path.isfile(f) and os.path.getsize(f) > 1 << 20}
+          json.dump({"model": "thewh1teagle/pocket-tts-onnx (english-ipa, Hebrew adapter)", "input": "IPA: conikud (the package's own Hebrew G2P) or RenikudPlus",
+                     "load_s": load_s, "files": files, "voices": voices, "takes": takes}, open("out/pocket/meta.json", "w"), ensure_ascii=False, indent=1)
+          print("=== INFO load_s", load_s, "files", files)
+          print("create", inspect.signature(tts.create)); print("DIR", [a for a in dir(tts) if not a.startswith("_")])
           PY
+          echo "=== examples/hebrew.py"; cut -c1-200 pk/examples/hebrew.py | head -45
+          echo "=== USAGE clone/voices"; grep -n -i -A7 "clon\|## voices\|hebrew" pk/docs/USAGE.md | cut -c1-200 | head -70
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -247,7 +260,8 @@ jobs:
                   voices.setdefault(t["voice"], []).append(t)
               meta["summary"] = {v: {"cer": round(float(np.mean([x["cer"] for x in ts])), 4),
                                      "audio_s": round(sum(x["seconds"] for x in ts), 1),
-                                     "work_per_audio": round(sum(x["work_s"] for x in ts) / max(0.01, sum(x["seconds"] for x in ts)), 2)}
+                                     "work_per_audio": round(sum(x["work_s"] for x in ts) / max(0.01, sum(x["seconds"] for x in ts)), 2),
+                                     "work_per_audio_net": round(sum(max(0, x["work_s"] - meta.get("cli_overhead_s", 0)) for x in ts) / max(0.01, sum(x["seconds"] for x in ts)), 2)}
                                  for v, ts in voices.items()}
               res["models"][os.path.basename(d)] = meta
               print(os.path.basename(d), json.dumps(meta["summary"], ensure_ascii=False, indent=1))
