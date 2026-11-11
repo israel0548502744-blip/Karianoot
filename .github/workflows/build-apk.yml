@@ -25,7 +25,9 @@ jobs:
           gradle-version: "8.14.3"
       - name: Build the Qwen engine for the phone (qwentts.cpp + JNI, arm64)
         run: |
-          sudo apt-get install -y -q ninja-build > /dev/null
+          # Ubuntu's package mirror is sometimes unreachable from the runner: prefer the PyPI build of ninja.
+          command -v ninja > /dev/null || pipx install ninja > /dev/null || sudo apt-get install -y -q ninja-build > /dev/null
+          ninja --version
           android/qwen/build_android.sh "${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
       - name: Build the Magpie engine for the phone (magpie-tts.cpp + Hebrew patch + JNI, arm64)
         run: android/magpie/build_android.sh "${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
