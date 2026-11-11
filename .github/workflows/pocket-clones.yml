@@ -41,12 +41,15 @@ jobs:
           pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
           os.makedirs("out/pocket", exist_ok=True)
           tts = PocketTTS.from_pretrained("english-ipa")
+          import inspect
+          kw = {"phonemes": True} if "phonemes" in inspect.signature(tts.create).parameters else {}
+          print("create", inspect.signature(tts.create), kw)
           takes = []
           def render(label, refs):
               for i, p in enumerate(pieces):
                   wav = f"out/pocket/clone_{label}_{i}.wav"
                   try:
-                      t0 = time.time(); samples, sr = tts.create(p["ipa"], voice=refs[i]); dt = time.time() - t0
+                      t0 = time.time(); samples, sr = tts.create(p["ipa"], voice=refs[i], **kw); dt = time.time() - t0
                   except Exception:
                       print("FAILED", label, i); traceback.print_exc(limit=4); return
                   sf.write(wav, np.asarray(samples, dtype=np.float32).reshape(-1), sr)
