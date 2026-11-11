@@ -328,9 +328,10 @@ class BlueTts(
 
         /**
          * The shortest "natural" sentence pause for Blue. Its own 0.1 s sounds rushed: in the joins round the user
-         * picked the old joins (0.2 s between pieces) over every sentence at 0.1 s.
+         * picked the old joins (0.2 s between pieces) over every sentence at 0.1 s,
+         * and then 0.3 s over 0.2 s and 0.11 s (picker r13).
          */
-        const val MIN_PAUSE = 0.2f
+        const val MIN_PAUSE = 0.3f
 
         /** 25 ms fade in/out so joined pieces don't click (as the original LightBlue code did). */
         fun fadeEdges(w: FloatArray, rate: Int, ms: Int = 25): FloatArray {

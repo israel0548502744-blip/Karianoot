@@ -1,0 +1,116 @@
+name: Pocket TTS clones of the liked voices
+
+# The user liked Pocket TTS only as a clone of Magpie speaker 10 (picker r14). Clone every liked Magpie voice, each from
+# the OTHER piece of the passage (so the reference never says the text being generated), and score with the recognizer.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/pocket-clones.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  clones:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: |
+          git clone -q https://github.com/thewh1teagle/pocket-tts-onnx pk && git -C pk log -1 --format=%H
+          pip install -q soundfile numpy onnxruntime huggingface_hub
+          pip install -q ./pk 2>&1 | tail -5
+      - name: References
+        run: |
+          curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz && ls wavs/q8_0 | head -40
+      - name: Generate
+        run: |
+          python - <<'PY'
+          import json, os, time, traceback
+          import numpy as np, soundfile as sf
+          from pocket_tts_onnx import PocketTTS
+          pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          os.makedirs("out/pocket", exist_ok=True)
+          tts = PocketTTS.from_pretrained("english-ipa")
+          takes = []
+          def render(label, refs):
+              for i, p in enumerate(pieces):
+                  wav = f"out/pocket/clone_{label}_{i}.wav"
+                  try:
+                      t0 = time.time(); samples, sr = tts.create(p["ipa"], voice=refs[i]); dt = time.time() - t0
+                  except Exception:
+                      print("FAILED", label, i); traceback.print_exc(limit=4); return
+                  sf.write(wav, np.asarray(samples, dtype=np.float32).reshape(-1), sr)
+                  takes.append({"file": os.path.basename(wav), "voice": label, "piece": i, "work_s": round(dt, 2)})
+                  print("OK", label, i, round(dt, 1), flush=True)
+          n = len(pieces)
+          for spk in (10, 18, 19, 6, 9, 11, 12, 13, 15, 16):
+              src = [f"wavs/q8_0/spk{spk}_{i}.wav" for i in range(n)]
+              if not all(os.path.exists(s) for s in src): print("no reference for", spk); continue
+              render(f"spk{spk}", [src[(i + 1) % n] for i in range(n)])        # reference = the other piece
+              if spk in (10, 18, 19):
+                  both = np.concatenate([sf.read(s, dtype="float32")[0] for s in src]); sr = sf.info(src[0]).samplerate
+                  sf.write(f"ref_both_{spk}.wav", both, sr)
+                  render(f"spk{spk}_long", [f"ref_both_{spk}.wav"] * n)          # longer reference (says the text too)
+                  render(f"spk{spk}_take2", [src[(i + 1) % n] for i in range(n)])  # a second take: how stable is it?
+          json.dump({"model": "thewh1teagle/pocket-tts-onnx english-ipa, RenikudPlus IPA, cloned from Magpie q8_0 clips", "takes": takes},
+                    open("out/pocket/meta.json", "w"), ensure_ascii=False, indent=1)
+          PY
+      - name: Score
+        run: |
+          pip install -q faster-whisper soundfile scipy numpy
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          find out -type f | head -100
+          python - <<'PY'
+          import glob, json, os, subprocess, unicodedata
+          import numpy as np, soundfile as sf
+          from scipy.signal import resample_poly
+          from faster_whisper import WhisperModel
+          pieces = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          asr = WhisperModel("asr", device="cpu", compute_type="int8")
+          def norm(s):
+              s = "".join(c for c in unicodedata.normalize("NFD", s) if "א" <= c <= "ת" or c == " ")
+              return " ".join(s.split())
+          def cer(ref, hyp):
+              r, h = norm(ref).replace(" ", ""), norm(hyp).replace(" ", "")
+              d = list(range(len(h) + 1))
+              for i in range(1, len(r) + 1):
+                  prev, d[0] = d[0], i
+                  for j in range(1, len(h) + 1):
+                      cur = min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1]))
+                      prev, d[j] = d[j], cur
+              return d[len(h)] / max(1, len(r))
+          res = {"runner_cpu": subprocess.run("lscpu | grep 'Model name' | cut -d: -f2", shell=True, capture_output=True, text=True).stdout.strip(),
+                 "cores": os.cpu_count(), "models": {}}
+          for mp in sorted(glob.glob("out/*/meta.json")):
+              meta = json.load(open(mp, encoding="utf-8")); d = os.path.dirname(mp); voices = {}
+              for t in meta["takes"]:
+                  wav, sr = sf.read(os.path.join(d, t["file"]), dtype="float32")
+                  if wav.ndim > 1: wav = wav.mean(axis=1)
+                  segs, _ = asr.transcribe(resample_poly(wav, 16000, sr).astype(np.float32), language="he", beam_size=5)
+                  hyp = " ".join(x.text for x in segs).strip()
+                  t.update(seconds=round(len(wav) / sr, 2), sample_rate=sr, cer=round(cer(pieces[t["piece"]]["text"], hyp), 4),
+                           peak=round(float(np.abs(wav).max()), 3), heard=hyp)
+                  voices.setdefault(t["voice"], []).append(t)
+              meta["summary"] = {v: {"cer": round(float(np.mean([x["cer"] for x in ts])), 4),
+                                     "audio_s": round(sum(x["seconds"] for x in ts), 1),
+                                     "work_per_audio": round(sum(x["work_s"] for x in ts) / max(0.01, sum(x["seconds"] for x in ts)), 2),
+                                     "work_per_audio_net": round(sum(max(0, x["work_s"] - meta.get("cli_overhead_s", 0)) for x in ts) / max(0.01, sum(x["seconds"] for x in ts)), 2)}
+                                 for v, ts in voices.items()}
+              res["models"][os.path.basename(d)] = meta
+              print(os.path.basename(d), json.dumps(meta["summary"], ensure_ascii=False, indent=1))
+              for v, ts in voices.items(): print("HEARD", v, "|", ts[0]["heard"][:160])
+          json.dump(res, open("results.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+          PY
+          (cd out && tar czf ../wavs.tgz .)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete pocket-clones -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create pocket-clones results.json wavs.tgz -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Pocket TTS clones" --notes "Pocket TTS (CC BY 4.0) cloning the Magpie voices the user liked. Samples with ASR scores. Not the app."
