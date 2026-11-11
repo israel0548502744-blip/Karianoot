@@ -106,6 +106,15 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   and ICL change nothing; ʁ->χ makes it a fricative but CER 16%. The trill detector also calls Blue (control) 100% rolled, so the
   numbers are unreliable: the user's ear decides.
 
+## New models probe (Nov 10-11 2026, `new-models-probe.yml`, prerelease `new-models-probe`)
+- MOSS-TTS-Nano (Apache-2.0): Hebrew unusable (CER 52-58% on every voice). Rejected.
+- Pocket TTS (thewh1teagle/pocket-tts-onnx, english-ipa graph 232 MB, CC BY 4.0, cloning): with RenikudPlus IPA CER 1-7%
+  (omer / javert 1.1%), work/audio 0.31 on 4 CI cores (Magpie 2.2). Its own G2P (conikud) gives CER ~50%: use RenikudPlus.
+  Samples in picker round r14_pocket (8 voices + a clone of Magpie speaker 10); waiting for the user's ear. Not in the app.
+- Automatic ear (`tools/ear/`, `ear.yml`): UTMOS agrees with the user's picks only weakly (AUC 0.62); use it as a floor
+  (< 2.6 = bad), never as proof of quality. DNSMOS is near chance.
+- Lexicon round 3 (apk-65): 51 Saudi / MLS / South America names. Odds "3.40" -> "שלוש ארבעים" is the intended reading.
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).
