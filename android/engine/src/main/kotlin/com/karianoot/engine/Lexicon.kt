@@ -1038,7 +1038,7 @@ object Lexicon {
         "רשם הטריק" to "ʁaʃˈam hˈetʁik",
         "שלושער" to "ʃloʃˈaʔaʁ",
         "תיקואים" to "tekuʔˈim",
-        // Saudi league, MLS, South America (round 3)
+        // Saudi league, MLS, South America (round 3, Nov 10)
         "אל קדסיה" to "ʔˈal kadisˈija",
         "אל איתיפאק" to "ʔˈal ʔitifˈak",
         "אל פתח" to "ʔˈal fˈateχ",
