@@ -23,7 +23,12 @@ jobs:
         run: |
           git clone -q https://github.com/thewh1teagle/pocket-tts-onnx pk && git -C pk log -1 --format=%H
           pip install -q soundfile numpy onnxruntime huggingface_hub
-          pip install -q ./pk 2>&1 | tail -5
+          pip install -q ./pk 2>&1 | tail -15 || true
+          if ! python -c "import pocket_tts_onnx" 2>/dev/null; then
+            python -c "import tomllib; print('\n'.join(tomllib.load(open('pk/pyproject.toml','rb'))['project'].get('dependencies', [])))" > deps.txt; cat deps.txt
+            while read -r d; do pip install -q "$d" 2>&1 | tail -2 || true; done < deps.txt
+            echo "PYTHONPATH=$PWD/pk/src" >> "$GITHUB_ENV"
+          fi
       - name: References
         run: |
           curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz && ls wavs/q8_0 | head -40
