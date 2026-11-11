@@ -52,12 +52,12 @@ def missed(ref, hyp):
 rows = []
 t_start = time.time()
 for k, p in enumerate(mine):
-    row = {k2: p[k2] for k2 in ("sentence", "piece", "source", "text", "spoken", "ipa")}
+    row = {k2: p[k2] for k2 in ("sentence", "piece", "source", "text", "spoken", "ipa", "variant") if k2 in p}
     row["takes"] = {}
     for spk in speakers:
         wav = os.path.join(out, f"s{p['sentence']}_{p['piece']}_spk{spk}.wav")
         r = subprocess.run([cli, "say", "--model", gguf, "--text", p["ipa"], "--lang", "he", "--speaker", str(spk),
-                            "--seed", str(1000 + p["sentence"]), "--threads", str(os.cpu_count() or 4), "--output", wav],
+                            "--seed", str(p.get("seed", 1000 + p["sentence"])), "--threads", str(os.cpu_count() or 4), "--output", wav],
                            capture_output=True, text=True, env=dict(os.environ, MAGPIE_PRIOR="0"))
         if r.returncode != 0 or not os.path.exists(wav):
             row["takes"][spk] = {"error": (r.stdout + r.stderr)[-300:]}
@@ -67,7 +67,8 @@ for k, p in enumerate(mine):
             a = a.mean(axis=1)
         segs, _ = asr.transcribe(resample_poly(a, 16000, sr).astype(np.float32), language="he", beam_size=5)
         heard = " ".join(x.text for x in segs).strip()
-        row["takes"][spk] = {"heard": heard, "seconds": round(len(a) / sr, 2), "missed": missed(p["spoken"], heard)}
+        row["takes"][spk] = {"heard": heard, "seconds": round(len(a) / sr, 2), "missed": missed(p["spoken"], heard),
+                           "sim": round(difflib.SequenceMatcher(a="".join(words(p["spoken"])), b="".join(words(heard)), autojunk=False).ratio(), 3)}
         os.remove(wav)
     rows.append(row)
     print(f"[{k + 1}/{len(mine)} {time.time() - t_start:.0f}s] " +

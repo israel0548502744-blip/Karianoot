@@ -1,0 +1,67 @@
+name: Proofreader variants
+
+# A/B of IPA variants (tools/proof/variants.jsonl) through the same speak-and-listen path. The full run speaks ~480 football sentences (every lexicon name, numbers, odds, common tip phrases) through the app's text path
+# and Magpie (voices 10 and 13), transcribes them with the Hebrew recognizer and lists the words every voice missed.
+# The user should not have to hunt for mistakes: this does. Results: prerelease "proofread" (report.md, report.json).
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/proof-variants.yml", "tools/proof/variants.jsonl"]
+
+permissions:
+  contents: write
+
+jobs:
+  speak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Engine (magpie-tts.cpp + Hebrew patch, host)
+        run: |
+          command -v ninja > /dev/null || pipx install ninja > /dev/null
+          android/magpie/build_android.sh --host > /dev/null 2>&1 || android/magpie/build_android.sh --host
+      - name: Model and recognizer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download magpie-gguf -R "$GITHUB_REPOSITORY" -p magpie-he-q8_0.gguf
+          echo "5d1f2cffa97c6fbc83a53da2bf965d00cb7c4691feedc4dd0960a5e566ac51c4  magpie-he-q8_0.gguf" | sha256sum -c
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          pip install -q faster-whisper soundfile scipy numpy
+      - name: Speak and listen
+        run: |
+          python tools/proof/run.py android/magpie/build/host/magpie-cli magpie-he-q8_0.gguf tools/proof/variants.jsonl asr out \
+            ${{ matrix.shard }} 4 10,13,18
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proof-${{ matrix.shard }}
+          path: out/proof_*.json
+
+  report:
+    needs: speak
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: proof-*
+          path: shards
+      - name: Report
+        run: python3 tools/proof/report.py shards rel
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete proof-variants -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create proof-variants rel/report.md rel/report.json -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Proofreader variants" --notes "Words Magpie + the app's text path got wrong, found by the recognizer. Not the app."
