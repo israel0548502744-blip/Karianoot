@@ -122,6 +122,12 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   Samples in picker round r15_pocket_clones; waiting for the user's ear.
 - CI gotchas: a release cannot be created at a commit that changes `.github/workflows/build-apk.yml` (403 "Resource not
   accessible by integration") -> push a later android/ commit; job logs: `gh api repos/<repo>/actions/jobs/<id>/logs`.
+- Automatic proofreader (`proofread.yml`, prerelease `proofread`, Nov 11): `tools/proof/sentences.txt` (485 sentences: every lexicon
+  name once + numbers/odds/tip phrases) -> `ProofIpaTest` (the app's text path) -> magpie-cli voices 10+13 -> recognizer ->
+  `report.py` lists words BOTH voices missed. The user asked not to hunt for mistakes himself: run it after lexicon/TextPrep/Magpie
+  changes and fix what it finds. Most leads are recognizer spelling (MLS, תן האג, עופה); judge each with its IPA.
+  First run found Magpie's vocabulary has no ʒ / w and `clean()` dropped them (ג'נואה -> "denoa"); `proof-variants.yml` A/B on
+  3 voices picked dʒ->dʃ, ʒ->z, w->u (apk-70). Remaining near-misses: ג' sometimes heard as צ'.
 
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
