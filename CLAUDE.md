@@ -114,6 +114,14 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Automatic ear (`tools/ear/`, `ear.yml`): UTMOS agrees with the user's picks only weakly (AUC 0.62); use it as a floor
   (< 2.6 = bad), never as proof of quality. DNSMOS is near chance.
 - Lexicon round 3 (apk-65): 51 Saudi / MLS / South America names. Odds "3.40" -> "שלוש ארבעים" is the intended reading.
+- User picks Nov 11: r14 Pocket: all 7 preset voices rejected except marius ("good, but stumbles on some words"); best = the
+  clone of Magpie speaker 10. r13 joins: best 0.3 s -> Blue MIN_PAUSE 0.3 (apk-68).
+- `pocket-clones.yml` (prerelease `pocket-clones`): `tts.clone_voice(wav)` then `create(ipa, voice=cond, phonemes=True)`.
+  Clones of Magpie 10/18/19/6/13 from the other passage piece (~10 s): CER 4-6% (13: 0.6%), work/audio 0.28-0.4. A 20 s
+  reference is worse (drops words, CER 23-34%). Recurring errors: "ריאל" heard as "העל", the repeated "והיחס" dropped.
+  Samples in picker round r15_pocket_clones; waiting for the user's ear.
+- CI gotchas: a release cannot be created at a commit that changes `.github/workflows/build-apk.yml` (403 "Resource not
+  accessible by integration") -> push a later android/ commit; job logs: `gh api repos/<repo>/actions/jobs/<id>/logs`.
 
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
