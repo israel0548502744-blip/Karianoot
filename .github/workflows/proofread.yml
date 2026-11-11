@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   push:
     paths: [".github/workflows/proofread.yml", "tools/proof/**", "android/engine/src/main/kotlin/com/karianoot/engine/Lexicon.kt",
-            "android/engine/src/main/kotlin/com/karianoot/engine/TextPrep.kt"]
+            "android/engine/src/main/kotlin/com/karianoot/engine/TextPrep.kt", "android/engine/src/main/kotlin/com/karianoot/engine/MagpieNative.kt"]
 
 permissions:
   contents: write

@@ -32,6 +32,8 @@ class MagpieTtsTest {
     @Test fun ipaIsLimitedToTheTokenizerSymbols() {
         assertEquals("ʁeˈal madˈʁid, ʃalˈom!", MagpieTts.clean("ʁeˈal  madˈʁid ;  ʃalˈom ! ☺"))
         assertEquals("ɡol", MagpieTts.clean("gol"))
+        // Sounds the model lacks: ג' -> dʃ, ז' -> z, w -> u (not dropped).
+        assertEquals("dʃˈenoa zˈiʁo ˈuest hˈam", MagpieTts.clean("dʒˈenoa ʒˈiʁo ˈwest hˈam"))
         assertTrue(MagpieTts.clean("t͡s ʒ é").all { it in MagpieTts.SYMBOLS || it == ' ' })
     }
 

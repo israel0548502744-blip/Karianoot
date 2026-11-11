@@ -102,11 +102,16 @@ class MagpieTts(gguf: String, private val g2p: HebrewG2P?, private val threads: 
 
         /** The symbols the Hebrew tokenizer knows; anything else is mapped out. */
         const val SYMBOLS = "abdefhijklmnoprstuvzɡʁʃʔχˈ,.?!"
-        private val MAP = mapOf('g' to "ɡ", 'r' to "ʁ", 'x' to "χ", 'ʒ' to "ʒ", ';' to ",", ':' to ",", '…' to ".", '\'' to "ˈ")
+        private val MAP = mapOf('g' to "ɡ", 'r' to "ʁ", 'x' to "χ", 'ʒ' to "z", 'w' to "u", ';' to ",", ':' to ",", '…' to ".", '\'' to "ˈ")
 
+        /**
+         * The model has no ʒ and no w (dropping them made ג'נואה "denoa" and ווסט האם "est ham"). Substitutes picked by the
+         * recognizer on 3 voices x 17 names (proof-variants.yml): dʒ -> dʃ (ג'רארד 1.00 vs 0.89 dropped), ʒ -> z
+         * (ז'רמן 1.00 vs 0.90), w -> u (ווסט האם 0.99 vs 0.77).
+         */
         fun clean(ipa: String): String {
             val sb = StringBuilder(ipa.length)
-            for (c in java.text.Normalizer.normalize(ipa, java.text.Normalizer.Form.NFC)) {
+            for (c in java.text.Normalizer.normalize(ipa, java.text.Normalizer.Form.NFC).replace("dʒ", "dʃ")) {
                 when {
                     c in SYMBOLS -> sb.append(c)
                     c.isWhitespace() || c == '-' || c == '–' || c == '—' -> sb.append(' ')
