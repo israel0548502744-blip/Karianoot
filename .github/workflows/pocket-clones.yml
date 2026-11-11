@@ -45,11 +45,17 @@ jobs:
           kw = {"phonemes": True} if "phonemes" in inspect.signature(tts.create).parameters else {}
           print("create", inspect.signature(tts.create), kw)
           takes = []
-          def render(label, refs):
+          conds = {}
+          def cond(path):
+              if path not in conds:
+                  conds[path] = tts.clone_voice(path); c = conds[path]
+                  print("cloned", path, type(c).__name__, getattr(c, "shape", ""), flush=True)
+              return conds[path]
+          def render(label, refs, **extra):
               for i, p in enumerate(pieces):
                   wav = f"out/pocket/clone_{label}_{i}.wav"
                   try:
-                      t0 = time.time(); samples, sr = tts.create(p["ipa"], voice=refs[i], **kw); dt = time.time() - t0
+                      t0 = time.time(); samples, sr = tts.create(p["ipa"], voice=cond(refs[i]), **kw, **extra); dt = time.time() - t0
                   except Exception:
                       print("FAILED", label, i); traceback.print_exc(limit=4); return
                   sf.write(wav, np.asarray(samples, dtype=np.float32).reshape(-1), sr)
@@ -64,7 +70,7 @@ jobs:
                   both = np.concatenate([sf.read(s, dtype="float32")[0] for s in src]); sr = sf.info(src[0]).samplerate
                   sf.write(f"ref_both_{spk}.wav", both, sr)
                   render(f"spk{spk}_long", [f"ref_both_{spk}.wav"] * n)          # longer reference (says the text too)
-                  render(f"spk{spk}_take2", [src[(i + 1) % n] for i in range(n)])  # a second take: how stable is it?
+                  render(f"spk{spk}_take2", [src[(i + 1) % n] for i in range(n)], seed=7)  # a second take: how stable is it?
           json.dump({"model": "thewh1teagle/pocket-tts-onnx english-ipa, RenikudPlus IPA, cloned from Magpie q8_0 clips", "takes": takes},
                     open("out/pocket/meta.json", "w"), ensure_ascii=False, indent=1)
           PY
