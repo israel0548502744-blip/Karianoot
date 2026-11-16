@@ -31,6 +31,7 @@ class KarianootApp : Application() {
     lateinit var speech: Speech
     lateinit var voices: Voices
     lateinit var pronounce: Pronunciations
+    lateinit var voiceOrder: VoiceOrder
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _job = MutableStateFlow(JobState())
     val job: StateFlow<JobState> = _job
@@ -57,6 +58,7 @@ class KarianootApp : Application() {
         })
         models = Models(this)
         pronounce = Pronunciations(this)
+        voiceOrder = VoiceOrder(this)
         speech = Speech(this, models) { pronounce.list.value }
         voices = Voices(this, models)
         Notify.createChannels(this)

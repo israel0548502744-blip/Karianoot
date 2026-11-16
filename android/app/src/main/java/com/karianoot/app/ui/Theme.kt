@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -184,11 +185,15 @@ fun Modifier.enter(index: Int = 0): Modifier {
 }
 
 @Composable
-fun Modifier.pressable(enabled: Boolean = true, onClick: () -> Unit): Modifier {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun Modifier.pressable(enabled: Boolean = true, onLongClick: (() -> Unit)? = null, onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
     val s by animateFloatAsState(if (pressed) 0.96f else 1f, tween(110), label = "press")
-    return this.scale(s).clickable(source, indication = null, enabled = enabled, onClick = onClick)
+    if (onLongClick == null) return this.scale(s).clickable(source, indication = null, enabled = enabled, onClick = onClick)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    return this.scale(s).combinedClickable(source, indication = null, enabled = enabled, onClick = onClick,
+        onLongClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onLongClick() })
 }
 
 @Composable

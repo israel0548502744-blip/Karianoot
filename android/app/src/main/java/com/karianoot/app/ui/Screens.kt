@@ -37,6 +37,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Unarchive
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
@@ -173,12 +177,16 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var fixesOpen by remember { mutableStateOf(false) }
     var templatesOpen by remember { mutableStateOf(false) }
     val fixes by app.pronounce.list.collectAsState()
-    val ready = (Catalog.voices + custom).filter { v -> v.needs.all { states[it] == ModelState.Ready } }
+    val favorites by app.voiceOrder.favorites.collectAsState()
+    val archived by app.voiceOrder.archived.collectAsState()
+    var archiveAsk by remember { mutableStateOf<VoiceInfo?>(null) }
+    var archiveOpen by remember { mutableStateOf(false) }
+    val ready = (Catalog.voices + custom).filter { v -> v.id !in archived && v.needs.all { states[it] == ModelState.Ready } }
     // The last voice and pause are remembered across app starts.
     val prefs = remember { ctx.getSharedPreferences("studio", android.content.Context.MODE_PRIVATE) }
     var voiceId by remember { mutableStateOf(prefs.getString("voice", null) ?: Catalog.voices.first().id) }
     LaunchedEffect(voiceId) { prefs.edit().putString("voice", voiceId).apply() }
-    val voice = ready.firstOrNull { it.id == voiceId } ?: ready.firstOrNull()
+    val voice = ready.firstOrNull { it.id == voiceId } ?: app.voiceOrder.arrange(ready) { it.id }.firstOrNull()
     var alive by remember(voice?.id) { mutableFloatStateOf(voice?.liveliness ?: 1f) }
     var speed by remember { mutableFloatStateOf(1.0f) }
     var quality by remember { mutableStateOf(1) } // 0 fast, 1 good, 2 best
@@ -233,7 +241,16 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
 
         Section(Modifier.enter(3), title = "קול") {
             Segmented(listOf("הכל", "גברים", "נשים"), gender) { gender = it }
-            val shown = (Catalog.voices + custom).filter { gender == 0 || (gender == 1 && !it.female) || (gender == 2 && it.female) }
+            val shown = app.voiceOrder.arrange((Catalog.voices + custom).filter { gender == 0 || (gender == 1 && !it.female) || (gender == 2 && it.female) }) { it.id }
+            Text("♥ = הקול עובר לראש הרשימה · לחיצה ארוכה על קול = העברה לארכיון", color = C.Faint, fontSize = 12.sp)
+            val hearted = shown.filter { v -> v.id in favorites && v.needs.all { states[it] == ModelState.Ready } }
+            if (hearted.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("המועדפים שלי", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (v in hearted) VoiceChip(v, v.id == voice?.id, fav = true, onFav = { app.voiceOrder.toggleFavorite(v.id) },
+                        onLongClick = { archiveAsk = v }) { voiceId = v.id }
+                }
+            }
             for (g in VOICE_GROUPS) {
                 val inGroup = shown.filter(g.match)
                 if (inGroup.isEmpty() && !g.mine) continue
@@ -247,11 +264,16 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                     if (readyIn.isEmpty() && !g.mine) {
                         SoftButton(g.missing, Modifier.fillMaxWidth(), icon = Icons.Rounded.Download, onClick = openModels)
                     } else Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        for (v in readyIn) VoiceChip(v, v.id == voice?.id) { voiceId = v.id }
+                        for (v in readyIn) VoiceChip(v, v.id == voice?.id, fav = v.id in favorites, onFav = { app.voiceOrder.toggleFavorite(v.id) },
+                            onLongClick = { archiveAsk = v }) { voiceId = v.id }
                         if (g.mine) NewVoiceChip(cloning) { newVoice = true }
                     }
                 }
             }
+            val archivedVoices = (Catalog.voices + custom).filter { it.id in archived }
+            if (archivedVoices.isNotEmpty()) SoftButton("ארכיון קולות (${archivedVoices.size})", Modifier.fillMaxWidth(), icon = Icons.Rounded.Inventory2) { archiveOpen = true }
+            archiveAsk?.let { v -> ArchiveAskDialog(v, onYes = { app.voiceOrder.archive(v.id); archiveAsk = null }) { archiveAsk = null } }
+            if (archiveOpen) ArchiveDialog(archivedVoices, onRestore = { app.voiceOrder.restore(it.id) }) { archiveOpen = false }
             if (voice != null) {
                 val previewing by app.previewing.collectAsState()
                 val samplePlayer = remember { MediaPlayer() }
@@ -327,21 +349,65 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
 }
 
 @Composable
-private fun VoiceChip(v: VoiceInfo, selected: Boolean, onClick: () -> Unit) {
-    Column(
-        Modifier.width(96.dp).clip(RoundedCornerShape(20.dp))
-            .then(if (selected) Modifier.border(2.dp, C.GoldBrush, RoundedCornerShape(20.dp)) else Modifier.border(1.dp, C.Stroke, RoundedCornerShape(20.dp)))
-            .background(if (selected) Color(0x26E3BF6A) else Color(0x10FFF4DC)).pressable(onClick = onClick).padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.size(44.dp).clip(CircleShape).background(if (selected) C.GoldButton else Brush.linearGradient(listOf(Color(0x33FFF4DC), Color(0x11FFF4DC)))),
-            contentAlignment = Alignment.Center) {
-            Text((Regex("\\d+").find(v.name)?.value ?: v.name.split(" ").last()).take(2), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+private fun VoiceChip(v: VoiceInfo, selected: Boolean, fav: Boolean = false, onFav: (() -> Unit)? = null,
+                      onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    Box(Modifier.width(96.dp)) {
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                .then(if (selected) Modifier.border(2.dp, C.GoldBrush, RoundedCornerShape(20.dp)) else Modifier.border(1.dp, C.Stroke, RoundedCornerShape(20.dp)))
+                .background(if (selected) Color(0x26E3BF6A) else Color(0x10FFF4DC)).pressable(onLongClick = onLongClick, onClick = onClick).padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(Modifier.size(44.dp).clip(CircleShape).background(if (selected) C.GoldButton else Brush.linearGradient(listOf(Color(0x33FFF4DC), Color(0x11FFF4DC)))),
+                contentAlignment = Alignment.Center) {
+                Text((Regex("\\d+").find(v.name)?.value ?: v.name.split(" ").last()).take(2), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, textAlign = TextAlign.Center)
+            Text(if (v.personalOnly) "⚠ אישי" else v.note.ifEmpty { if (v.female) "אישה" else "גבר" }, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
         }
-        Spacer(Modifier.height(6.dp))
-        Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, textAlign = TextAlign.Center)
-        Text(if (v.personalOnly) "⚠ אישי" else v.note.ifEmpty { if (v.female) "אישה" else "גבר" }, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
+        if (onFav != null) Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(30.dp).clip(CircleShape).pressable(onClick = onFav),
+            contentAlignment = Alignment.Center) {
+            Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (fav) "הסר מהמועדפים" else "הוסף למועדפים",
+                tint = if (fav) Color(0xFFE5484D) else C.Faint, modifier = Modifier.size(20.dp))
+        }
     }
+}
+
+/** "Send to the archive?" after a long press on a voice. */
+@Composable
+private fun ArchiveAskDialog(v: VoiceInfo, onYes: () -> Unit, close: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("להעביר את \"${v.name}\" לארכיון?", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = { Text("הקול ייעלם מרשימת הקולות. אפשר להחזיר אותו בכל רגע מ\"ארכיון קולות\".", color = C.Sub, fontSize = 14.sp, lineHeight = 20.sp) },
+        confirmButton = { SoftButton("כן, לארכיון", icon = Icons.Rounded.Inventory2, color = C.Gold, onClick = onYes) },
+        dismissButton = { SoftButton("ביטול", onClick = close) },
+    )
+}
+
+/** The archived voices, each with a way back to the list. */
+@Composable
+private fun ArchiveDialog(voices: List<VoiceInfo>, onRestore: (VoiceInfo) -> Unit, close: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("ארכיון קולות", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (voices.isEmpty()) Text("הארכיון ריק.", color = C.Sub, fontSize = 14.sp)
+                for (v in voices) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                        Text(v.note.ifEmpty { if (v.female) "אישה" else "גבר" }, color = C.Faint, fontSize = 12.sp)
+                    }
+                    SoftButton("החזר", icon = Icons.Rounded.Unarchive, color = C.Gold) { onRestore(v) }
+                }
+            }
+        },
+        confirmButton = { SoftButton("סגירה", onClick = close) },
+    )
 }
 
 @Composable

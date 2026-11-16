@@ -51,6 +51,13 @@ class ScreenshotTest {
         shot("2_studio_ready", Tab.Studio, "ערב טוב לכולם! היום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק למה. תישארו עד הסוף.")
     }
 
+    @Test fun studioFavoritesAndArchive() {
+        install(Catalog.g2p, Catalog.magpie)
+        val app = ApplicationProvider.getApplicationContext<KarianootApp>()
+        app.voiceOrder.toggleFavorite("m_19"); app.voiceOrder.toggleFavorite("m_13"); app.voiceOrder.archive("m_9")
+        shot("8_studio_favorites", Tab.Studio, "ערב טוב לכל האוהדים!")
+    }
+
     @Test fun models() {
         install(Catalog.g2p)
         shot("3_models", Tab.Models)
