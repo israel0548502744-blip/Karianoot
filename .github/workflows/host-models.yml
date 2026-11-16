@@ -1,6 +1,7 @@
 name: Host model files
 
-# Model files the app downloads, kept in this repo's permanent release "models-v1" (never deleted by any workflow):
+# EVERY model file the app downloads is kept in this repo's permanent release "models-v1" (never deleted by any workflow),
+# with the license and readme of its source repo, so the app never depends on a creator keeping a repo online:
 #  - Blue V3: the Hugging Face repo notmax123/BlueV3-onnx answers 404 since Nov 2026 (release check); the files come
 #    from our mirror (models-mirror/bluev3.tgz, fetched on Nov 8 at the pinned revision) and are checked by size.
 #  - Magpie q8_0: copied from the magpie-gguf prerelease (which magpie-cpp.yml deletes and remakes) and checked by sha256.
@@ -40,6 +41,39 @@ jobs:
           gh release download magpie-gguf -R "$GITHUB_REPOSITORY" -p magpie-he-q8_0.gguf -D up
           echo "5d1f2cffa97c6fbc83a53da2bf965d00cb7c4691feedc4dd0960a5e566ac51c4  up/magpie-he-q8_0.gguf" | sha256sum -c
           curl -sSL -o up/NOTICE-magpie.txt "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/NOTICE.txt" || true
+      - name: Every other model file, from Hugging Face at its pinned revision (+ the repo's license and readme)
+        run: |
+          python3 - <<'PY'
+          import os, re, urllib.request
+          src = open("android/app/src/main/java/com/karianoot/app/Catalog.kt", encoding="utf-8").read()
+          blocks = re.split(r"\n    val \w+ = ModelInfo\(", src)[1:]
+          for body in blocks:
+              mid = re.search(r'\bid = "([^"]+)"', body).group(1)
+              repo = (re.search(r'\brepo = "([^"]+)"', body) or [None, ""])[1]
+              rev = (re.search(r'\brevision = "([^"]+)"', body) or [None, ""])[1]
+              repos = {(repo, rev)}
+              for m in re.finditer(r'ModelFile\(([^()]*)\)', body):
+                  args = m.group(1)
+                  if "url =" in args: continue
+                  path = re.match(r'\s*"([^"]+)"', args).group(1)
+                  size = int(re.search(r",\s*([\d_]+)", args).group(1).replace("_", ""))
+                  r_ = (re.search(r'repo = "([^"]+)"', args) or [None, repo])[1]
+                  v_ = (re.search(r'revision = "([^"]+)"', args) or [None, rev])[1]
+                  repos.add((r_, v_))
+                  out = f"up/{mid}-{path.replace('/', '-')}"
+                  urllib.request.urlretrieve(f"https://huggingface.co/{r_}/resolve/{v_}/{path}", out)
+                  assert os.path.getsize(out) == size, (out, os.path.getsize(out), size)
+                  print("ok", out, size, flush=True)
+              for r_, v_ in sorted(repos):
+                  if not r_: continue
+                  for doc in ("LICENSE", "LICENSE.md", "LICENSE.txt", "README.md"):
+                      try:
+                          urllib.request.urlretrieve(f"https://huggingface.co/{r_}/resolve/{v_}/{doc}",
+                                                     f"up/license-{r_.replace('/', '_')}-{doc}")
+                          print("doc", r_, doc)
+                      except Exception:
+                          pass
+          PY
       - name: Upload (adds files, never deletes the release)
         run: |
           gh release view models-v1 -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
