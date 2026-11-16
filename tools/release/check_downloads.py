@@ -12,6 +12,7 @@ blocks = re.split(r"\n    val (\w+) = ModelInfo\(", src)
 results, bad = [], 0
 for name, body in zip(blocks[1::2], blocks[2::2]):
     body = body[: body.find("\n    )\n")] if "\n    )\n" in body else body
+    mid = re.search(r'\bid = "([^"]+)"', body).group(1)
     repo = (re.search(r'\brepo = "([^"]+)"', body) or [None, ""])[1]
     rev = (re.search(r'\brevision = "([^"]+)"', body) or [None, ""])[1]
     for m in re.finditer(r'ModelFile\(([^()]*(?:\([^()]*\)[^()]*)*)\)', body):
@@ -23,7 +24,7 @@ for name, body in zip(blocks[1::2], blocks[2::2]):
         f_rev = (re.search(r'revision = "([^"]+)"', args) or [None, rev])[1]
         url = re.search(r'url = "([^"]+)"', args)
         url = re.sub(r"\$(\w+)", lambda k: const.get(k.group(1), k.group(0)), url.group(1)) if url else \
-            f"https://huggingface.co/{f_repo}/resolve/{f_rev}/{path.split('@')[-1]}"
+            f"{const['MODELS_V1']}/{mid}-{path.split('@')[-1].replace('/', '-')}"
         sha_pin = (re.search(r'sha256 = "([0-9a-f]{64})"', args) or [None, None])[1]
         row = {"model": name, "path": path, "url": url, "size_pinned": size, "sha_pinned": sha_pin}
         t0 = time.time()

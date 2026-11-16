@@ -23,7 +23,9 @@ data class ModelInfo(
     val home: String = "huggingface.co/$repo",
 ) {
     val size: Long get() = files.sumOf { it.size }
-    fun url(f: ModelFile) = f.url ?: "https://huggingface.co/${f.repo ?: repo}/resolve/${f.revision ?: revision}/${f.path.substringAfterLast("@")}"
+    /** Our own copy in the permanent release models-v1 (host-models.yml), so the app never depends on a source repo
+     *  staying online; [repo]/[revision] say where it came from (same bytes, checked by size). */
+    fun url(f: ModelFile) = f.url ?: "${Catalog.MODELS_V1}/$id-${f.path.substringAfterLast("@").replace('/', '-')}"
 }
 
 data class VoiceInfo(
