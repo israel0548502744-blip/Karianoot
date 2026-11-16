@@ -129,6 +129,16 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   First run found Magpie's vocabulary has no ʒ / w and `clean()` dropped them (ג'נואה -> "denoa"); `proof-variants.yml` A/B on
   3 voices picked dʒ->dʃ, ʒ->z, w->u (apk-70). Remaining near-misses: ג' sometimes heard as צ'.
 
+## Pre-launch checks (Nov 16 2026)
+- `release-check.yml` (`tools/release/check_downloads.py`): fetches every model file in Catalog.kt and checks size / sha256.
+  First run: Blue V3 (notmax123/BlueV3-onnx) is GONE from Hugging Face (404) -> `host-models.yml` re-hosts it from
+  models-mirror/bluev3.tgz (sizes checked) + Magpie q8_0 in the permanent release `models-v1` (never delete it; the app
+  points there; `Catalog.MODELS_V1`). Blue V3 stays size-checked only so installed copies stay valid. Now 29/29 OK (apk-77).
+- Still depending on Hugging Face: RenikudPlus, Blue 2.5, clone kit, Qwen. If one disappears, host it the same way.
+- User asks (Nov 16, apk-73..76): heart = voice first + "המועדפים שלי" row; long press = "להעביר לארכיון?" + "ארכיון קולות"
+  to restore (`VoiceOrder.kt`, prefs `voice_order`); rename (✎) and sample (▶, "תכירו את ישראל, סוכן הנסיעות הטוב בעולם!")
+  on every voice; floating "צור קריינות"; Settings tab (was About) with "ניגון אוטומטי בסיום" (default on).
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).
