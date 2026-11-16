@@ -57,7 +57,7 @@ class ScreenshotTest {
         install(Catalog.g2p, Catalog.magpie)
         for (f in Catalog.magpie.files) f.sha256?.let { File(ctx.getExternalFilesDir(null), "models/${Catalog.magpie.id}/${f.path}.sha256").writeText(it) }
         val app = ApplicationProvider.getApplicationContext<KarianootApp>()
-        app.voiceOrder.toggleFavorite("m_19"); app.voiceOrder.toggleFavorite("m_13"); app.voiceOrder.archive("m_9")
+        app.voiceOrder.toggleFavorite("m_19"); app.voiceOrder.toggleFavorite("m_13"); app.voiceOrder.archive("m_9"); app.voiceOrder.rename("m_13", "השדרן שלי")
         shot("8_studio_favorites", Tab.Studio, "ערב טוב לכל האוהדים!")
     }
 

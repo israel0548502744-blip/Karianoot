@@ -113,7 +113,7 @@ class KarianootApp : Application() {
 
     fun redoPart(c: Creation, i: Int, done: (Creation?) -> Unit) {
         if (redoing.value != null || _job.value.busy) return
-        val voice = (Catalog.voices + voices.custom.value).firstOrNull { it.id == c.voiceId } ?: return done(null)
+        val voice = (Catalog.voices + voices.custom.value).map(voiceOrder::named).firstOrNull { it.id == c.voiceId } ?: return done(null)
         redoing.value = c.file to i
         scope.launch {
             val r = runCatching { speech.redoPart(c, i, voice) }.getOrNull()

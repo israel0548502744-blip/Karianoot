@@ -37,6 +37,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -181,7 +183,20 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val archived by app.voiceOrder.archived.collectAsState()
     var archiveAsk by remember { mutableStateOf<VoiceInfo?>(null) }
     var archiveOpen by remember { mutableStateOf(false) }
-    val ready = (Catalog.voices + custom).filter { v -> v.id !in archived && v.needs.all { states[it] == ModelState.Ready } }
+    var renaming by remember { mutableStateOf<VoiceInfo?>(null) }
+    val names by app.voiceOrder.names.collectAsState()
+    // Every voice under the user's own name for it, if they gave one.
+    val allVoices = remember(custom, names) { (Catalog.voices + custom).map(app.voiceOrder::named) }
+    val previewing by app.previewing.collectAsState()
+    val samplePlayer = remember { MediaPlayer() }
+    DisposableEffect(Unit) { onDispose { samplePlayer.release() } }
+    val playSample: (VoiceInfo) -> Unit = { v ->
+        app.previewVoice(v) { f ->
+            if (f == null) Toast.makeText(ctx, "לא הצלחתי להכין דוגמה", Toast.LENGTH_SHORT).show()
+            else runCatching { samplePlayer.reset(); samplePlayer.setDataSource(f.path); samplePlayer.prepare(); samplePlayer.start() }
+        }
+    }
+    val ready = allVoices.filter { v -> v.id !in archived && v.needs.all { states[it] == ModelState.Ready } }
     // The last voice and pause are remembered across app starts.
     val prefs = remember { ctx.getSharedPreferences("studio", android.content.Context.MODE_PRIVATE) }
     var voiceId by remember { mutableStateOf(prefs.getString("voice", null) ?: Catalog.voices.first().id) }
@@ -241,14 +256,15 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
 
         Section(Modifier.enter(3), title = "קול") {
             Segmented(listOf("הכל", "גברים", "נשים"), gender) { gender = it }
-            val shown = app.voiceOrder.arrange((Catalog.voices + custom).filter { gender == 0 || (gender == 1 && !it.female) || (gender == 2 && it.female) }) { it.id }
+            val shown = app.voiceOrder.arrange(allVoices.filter { gender == 0 || (gender == 1 && !it.female) || (gender == 2 && it.female) }) { it.id }
             Text("לחיצה על הלב: הקול עובר לראש הרשימה. לחיצה ארוכה על קול: העברה לארכיון.", color = C.Faint, fontSize = 12.sp, lineHeight = 17.sp)
             val hearted = shown.filter { v -> v.id in favorites && v.needs.all { states[it] == ModelState.Ready } }
             if (hearted.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("המועדפים שלי", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     for (v in hearted) VoiceChip(v, v.id == voice?.id, fav = true, onFav = { app.voiceOrder.toggleFavorite(v.id) },
-                        onLongClick = { archiveAsk = v }) { voiceId = v.id }
+                        onLongClick = { archiveAsk = v }, sampling = previewing == v.id, sampleEnabled = previewing == null && !busy,
+                        onSample = { playSample(v) }, onRename = { renaming = v }) { voiceId = v.id }
                 }
             }
             for (g in VOICE_GROUPS) {
@@ -265,27 +281,20 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                         SoftButton(g.missing, Modifier.fillMaxWidth(), icon = Icons.Rounded.Download, onClick = openModels)
                     } else Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         for (v in readyIn) VoiceChip(v, v.id == voice?.id, fav = v.id in favorites, onFav = { app.voiceOrder.toggleFavorite(v.id) },
-                            onLongClick = { archiveAsk = v }) { voiceId = v.id }
+                            onLongClick = { archiveAsk = v }, sampling = previewing == v.id, sampleEnabled = previewing == null && !busy,
+                            onSample = { playSample(v) }, onRename = { renaming = v }) { voiceId = v.id }
                         if (g.mine) NewVoiceChip(cloning) { newVoice = true }
                     }
                 }
             }
-            val archivedVoices = (Catalog.voices + custom).filter { it.id in archived }
+            val archivedVoices = allVoices.filter { it.id in archived }
             if (archivedVoices.isNotEmpty()) SoftButton("ארכיון קולות (${archivedVoices.size})", Modifier.fillMaxWidth(), icon = Icons.Rounded.Inventory2) { archiveOpen = true }
             archiveAsk?.let { v -> ArchiveAskDialog(v, onYes = { app.voiceOrder.archive(v.id); archiveAsk = null }) { archiveAsk = null } }
+            renaming?.let { v -> RenameDialog(v, original = (Catalog.voices + custom).firstOrNull { it.id == v.id }?.name ?: v.name,
+                onSave = { app.voiceOrder.rename(v.id, it); renaming = null }) { renaming = null } }
             if (archiveOpen) ArchiveDialog(archivedVoices, onRestore = { app.voiceOrder.restore(it.id) }) { archiveOpen = false }
-            if (voice != null) {
-                val previewing by app.previewing.collectAsState()
-                val samplePlayer = remember { MediaPlayer() }
-                DisposableEffect(Unit) { onDispose { samplePlayer.release() } }
-                SoftButton(if (previewing == voice.id) "מכין דוגמה…" else "השמע דוגמה: ${voice.name}", Modifier.fillMaxWidth(),
-                    icon = Icons.Rounded.PlayArrow, enabled = previewing == null && !busy) {
-                    app.previewVoice(voice) { f ->
-                        if (f == null) Toast.makeText(ctx, "לא הצלחתי להכין דוגמה", Toast.LENGTH_SHORT).show()
-                        else runCatching { samplePlayer.reset(); samplePlayer.setDataSource(f.path); samplePlayer.prepare(); samplePlayer.start() }
-                    }
-                }
-            }
+            if (voice != null) SoftButton(if (previewing == voice.id) "מכין דוגמה…" else "השמע דוגמה: ${voice.name}", Modifier.fillMaxWidth(),
+                icon = Icons.Rounded.PlayArrow, enabled = previewing == null && !busy) { playSample(voice) }
             if (voice?.personalOnly == true) Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.WarningAmber, null, tint = C.Amber, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -350,7 +359,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
 
 @Composable
 private fun VoiceChip(v: VoiceInfo, selected: Boolean, fav: Boolean = false, onFav: (() -> Unit)? = null,
-                      onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+                      onLongClick: (() -> Unit)? = null, sampling: Boolean = false, sampleEnabled: Boolean = true,
+                      onSample: (() -> Unit)? = null, onRename: (() -> Unit)? = null, onClick: () -> Unit) {
     Box(Modifier.width(96.dp)) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
@@ -365,6 +375,17 @@ private fun VoiceChip(v: VoiceInfo, selected: Boolean, fav: Boolean = false, onF
             Spacer(Modifier.height(6.dp))
             Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, textAlign = TextAlign.Center)
             Text(if (v.personalOnly) "⚠ אישי" else v.note.ifEmpty { if (v.female) "אישה" else "גבר" }, color = if (v.personalOnly) C.Amber else C.Faint, fontSize = 11.sp)
+            if (onSample != null || onRename != null) Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onSample != null) Box(Modifier.size(34.dp).clip(CircleShape).background(Color(0x22E3BF6A))
+                    .pressable(enabled = sampleEnabled, onClick = onSample), contentAlignment = Alignment.Center) {
+                    if (sampling) Wave(Modifier.size(18.dp, 12.dp), animate = true)
+                    else Icon(Icons.Rounded.PlayArrow, "דוגמה", tint = if (sampleEnabled) C.Gold else C.Faint, modifier = Modifier.size(20.dp))
+                }
+                if (onRename != null) Box(Modifier.size(34.dp).clip(CircleShape).background(Color(0x14FFF4DC)).pressable(onClick = onRename),
+                    contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Edit, "שינוי שם", tint = C.Sub, modifier = Modifier.size(18.dp))
+                }
+            }
         }
         if (onFav != null) Box(Modifier.align(Alignment.TopStart).padding(4.dp).size(30.dp).clip(CircleShape).pressable(onClick = onFav),
             contentAlignment = Alignment.Center) {
@@ -372,6 +393,31 @@ private fun VoiceChip(v: VoiceInfo, selected: Boolean, fav: Boolean = false, onF
                 tint = if (fav) Color(0xFFE5484D) else C.Faint, modifier = Modifier.size(20.dp))
         }
     }
+}
+
+/** A name of the user's choice for a voice; empty or "השם המקורי" = back to its own name. */
+@Composable
+private fun RenameDialog(v: VoiceInfo, original: String, onSave: (String) -> Unit, close: () -> Unit) {
+    var name by remember { mutableStateOf(v.name) }
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("שינוי שם לקול", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x14FFF4DC))
+                    .border(1.dp, C.Stroke, RoundedCornerShape(14.dp)).padding(12.dp)) {
+                    if (name.isEmpty()) Text("שם חדש", color = C.Faint)
+                    BasicTextField(name, { if (it.length <= 24) name = it }, Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = C.Text, fontSize = 16.sp, fontFamily = Rubik), cursorBrush = SolidColor(C.Gold), singleLine = true)
+                }
+                if (original != v.name || name != original) Text("השם המקורי: $original", color = C.Faint, fontSize = 12.sp)
+                if (original != v.name) SoftButton("חזרה לשם המקורי", Modifier.fillMaxWidth()) { onSave("") }
+            }
+        },
+        confirmButton = { SoftButton("שמירה", icon = Icons.Rounded.Check, color = C.Gold, enabled = name.isNotBlank()) { onSave(if (name.trim() == original) "" else name) } },
+        dismissButton = { SoftButton("ביטול", onClick = close) },
+    )
 }
 
 /** "Send to the archive?" after a long press on a voice. */

@@ -1038,6 +1038,7 @@ object Lexicon {
         "רשם הטריק" to "ʁaʃˈam hˈetʁik",
         "שלושער" to "ʃloʃˈaʔaʁ",
         "תיקואים" to "tekuʔˈim",
+        "תכירו" to "takiʁˈu",                       // the voice sample: "תכירו את ישראל" (G2P: takˈiʁu)
         // Saudi league, MLS, South America (round 3, Nov 10)
         "אל קדסיה" to "ʔˈal kadisˈija",
         "אל איתיפאק" to "ʔˈal ʔitifˈak",

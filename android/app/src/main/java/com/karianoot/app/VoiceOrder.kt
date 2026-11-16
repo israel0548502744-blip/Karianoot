@@ -15,6 +15,24 @@ class VoiceOrder(ctx: Context) {
     /** Hearted voice ids, in the order they were hearted. */
     val favorites: StateFlow<List<String>> = _favorites
     val archived: StateFlow<List<String>> = _archived
+    private val _names = MutableStateFlow(loadNames())
+    /** The user's own names for voices (voice id -> name). */
+    val names: StateFlow<Map<String, String>> = _names
+
+    private fun loadNames(): Map<String, String> = runCatching {
+        val o = org.json.JSONObject(prefs.getString(NAMES, "{}")!!)
+        o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+    /** A new name for a voice; blank = back to its own name. */
+    fun rename(id: String, name: String) {
+        val n = name.trim()
+        _names.value = if (n.isEmpty()) _names.value - id else _names.value + (id to n)
+        prefs.edit().putString(NAMES, org.json.JSONObject(_names.value).toString()).apply()
+    }
+
+    /** [v] with the user's name for it, if they gave one. */
+    fun named(v: VoiceInfo): VoiceInfo = _names.value[v.id]?.let { v.copy(name = it) } ?: v
 
     private fun load(key: String) = prefs.getString(key, "")!!.split('\n').filter { it.isNotEmpty() }
     private fun save(key: String, list: List<String>) = prefs.edit().putString(key, list.joinToString("\n")).apply()
@@ -46,5 +64,6 @@ class VoiceOrder(ctx: Context) {
     private companion object {
         const val FAV = "favorites"
         const val ARCHIVED = "archived"
+        const val NAMES = "names"
     }
 }

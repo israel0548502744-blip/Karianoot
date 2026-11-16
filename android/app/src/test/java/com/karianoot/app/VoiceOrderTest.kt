@@ -22,7 +22,13 @@ class VoiceOrderTest {
         assertEquals(listOf("a", "d"), o.arrange(all) { it })
         o.restore("c"); o.toggleFavorite("a")
         assertEquals(listOf("a", "c", "d"), o.arrange(all) { it })
+        o.rename("d", "  השדרן שלי ")
+        assertEquals("השדרן שלי", o.names.value["d"])
+        o.rename("d", "")
+        assertEquals(null, o.names.value["d"])
+        o.rename("a", "קול א")
         // Kept across app starts.
+        assertEquals("קול א", VoiceOrder(ctx).names.value["a"])
         assertEquals(listOf("b"), VoiceOrder(ctx).archived.value)
     }
 }

@@ -217,7 +217,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
 
     /** A short sample of [voice] (cached per voice), to choose voices by ear. */
     suspend fun preview(voice: VoiceInfo): File = withContext(Dispatchers.Default) {
-        val f = File(ctx.cacheDir, "preview2_${voice.id}.wav")
+        val f = File(ctx.cacheDir, "preview3_${voice.id}.wav")
         if (f.exists() && f.length() > 1000) return@withContext f
         lock.withLock {
             val engine = engineFor(voice) { _, _ -> }
@@ -321,7 +321,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         const val KEEP = 30
         /** Work per second of audio before this phone has measured a model: Magpie measured 2.2 on a 4-core CI runner. */
         val FIRST_GUESS = mapOf(Catalog.magpie.id to 2.2f)
-        const val PREVIEW_TEXT = "ערב טוב לכל האוהדים! ככה אני נשמע, והיחס הערב פשוט מטורף."
+        const val PREVIEW_TEXT = "תכירו את ישראל, סוכן הנסיעות הטוב בעולם!"
     }
 
     fun release() { tts?.close(); qwen?.close(); magpie?.close(); g2p?.close(); tts = null; qwen = null; magpie = null; g2p = null; ttsModel = null }
