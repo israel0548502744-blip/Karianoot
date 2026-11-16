@@ -66,11 +66,13 @@ object Catalog {
         subtitle = "הקולות רועי ורותם, הדור החדש. בבדיקה: 99.4% מהמילים נשמעו נכון.",
         repo = "notmax123/BlueV3-onnx", revision = "b26faaa63255d2991998c7f28c10aa4e6026f3c9",
         license = "MIT", credit = "BlueTTS — Maxim Melichov (notmax123)",
+        // notmax123/BlueV3-onnx is gone from Hugging Face (404, Nov 2026): the same files (checked by size) are hosted in
+        // this repo's permanent release models-v1 (host-models.yml). Size-checked only, so installed copies stay valid.
         files = listOf(
-            ModelFile("tts.json", 8_313), ModelFile("stats.npz", 1_920), ModelFile("uncond.npz", 52_732),
-            ModelFile("duration_predictor.onnx", 3_700_147), ModelFile("text_encoder.onnx", 28_117_514),
-            ModelFile("vector_estimator.onnx", 256_515_586), ModelFile("vocoder.onnx", 101_414_687),
-            ModelFile("voices/Roi.json", 296_585), ModelFile("voices/Rotem.json", 298_072),
+            ModelFile("tts.json", 8_313, url = "$MODELS_V1/bluev3-tts.json"), ModelFile("stats.npz", 1_920, url = "$MODELS_V1/bluev3-stats.npz"), ModelFile("uncond.npz", 52_732, url = "$MODELS_V1/bluev3-uncond.npz"),
+            ModelFile("duration_predictor.onnx", 3_700_147, url = "$MODELS_V1/bluev3-duration_predictor.onnx"), ModelFile("text_encoder.onnx", 28_117_514, url = "$MODELS_V1/bluev3-text_encoder.onnx"),
+            ModelFile("vector_estimator.onnx", 256_515_586, url = "$MODELS_V1/bluev3-vector_estimator.onnx"), ModelFile("vocoder.onnx", 101_414_687, url = "$MODELS_V1/bluev3-vocoder.onnx"),
+            ModelFile("voices/Roi.json", 296_585, url = "$MODELS_V1/bluev3-voices-Roi.json"), ModelFile("voices/Rotem.json", 298_072, url = "$MODELS_V1/bluev3-voices-Rotem.json"),
         ),
     )
 
@@ -139,10 +141,12 @@ object Catalog {
             "engine magpie-tts.cpp (MIT)",
         home = "huggingface.co/notmax123/magpie_tts_multilingual_357m-he · github.com/mudler/magpie-tts.cpp",
         files = listOf(ModelFile(MAGPIE_FILE, 603_088_864,
-            url = "https://github.com/israel0548502744-blip/Karianoot/releases/download/magpie-gguf/$MAGPIE_FILE",
+            url = "$MODELS_V1/$MAGPIE_FILE",
             sha256 = "5d1f2cffa97c6fbc83a53da2bf965d00cb7c4691feedc4dd0960a5e566ac51c4")),
     )
     const val MAGPIE_FILE = "magpie-he-q8_0.gguf"
+    /** Permanent release of this repo holding model files the app downloads (host-models.yml); never deleted. */
+    const val MODELS_V1 = "https://github.com/israel0548502744-blip/Karianoot/releases/download/models-v1"
 
     /** Shown as "coming soon" so the plan is visible inside the app. */
     val soon = listOf(

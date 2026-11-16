@@ -22,7 +22,7 @@ for name, body in zip(blocks[1::2], blocks[2::2]):
         f_repo = (re.search(r'repo = "([^"]+)"', args) or [None, repo])[1]
         f_rev = (re.search(r'revision = "([^"]+)"', args) or [None, rev])[1]
         url = re.search(r'url = "([^"]+)"', args)
-        url = url.group(1).replace("$MAGPIE_FILE", const.get("MAGPIE_FILE", "")) if url else \
+        url = re.sub(r"\$(\w+)", lambda k: const.get(k.group(1), k.group(0)), url.group(1)) if url else \
             f"https://huggingface.co/{f_repo}/resolve/{f_rev}/{path.split('@')[-1]}"
         sha_pin = (re.search(r'sha256 = "([0-9a-f]{64})"', args) or [None, None])[1]
         row = {"model": name, "path": path, "url": url, "size_pinned": size, "sha_pinned": sha_pin}
