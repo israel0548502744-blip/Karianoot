@@ -380,7 +380,7 @@ private fun VoiceChip(v: VoiceInfo, selected: Boolean, fav: Boolean = false, onF
         ) {
             Box(Modifier.size(44.dp).clip(CircleShape).background(if (selected) C.GoldButton else Brush.linearGradient(listOf(Color(0x33FFF4DC), Color(0x11FFF4DC)))),
                 contentAlignment = Alignment.Center) {
-                Text((Regex("\\d+").find(v.name)?.value ?: v.name.split(" ").last()).take(2), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text((Regex("\\d+").find(v.name)?.value ?: v.name.trim().take(1)), color = if (selected) Color(0xFF1A1307) else C.Text, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Spacer(Modifier.height(6.dp))
             Text(v.name, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, textAlign = TextAlign.Center)
