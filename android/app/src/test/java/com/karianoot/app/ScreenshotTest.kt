@@ -51,8 +51,11 @@ class ScreenshotTest {
         shot("2_studio_ready", Tab.Studio, "ערב טוב לכולם! היום יש לנו שלושה משחקים מעולים, ואני הולך להסביר לכם בדיוק למה. תישארו עד הסוף.")
     }
 
-    @Test fun studioFavoritesAndArchive() {
+    /** Tall screen so the voice list shows: two hearted Magpie voices on top, voice 9 archived. */
+    @Test @Config(qualifiers = "w412dp-h1700dp-xxhdpi")
+    fun studioFavoritesAndArchive() {
         install(Catalog.g2p, Catalog.magpie)
+        for (f in Catalog.magpie.files) f.sha256?.let { File(ctx.getExternalFilesDir(null), "models/${Catalog.magpie.id}/${f.path}.sha256").writeText(it) }
         val app = ApplicationProvider.getApplicationContext<KarianootApp>()
         app.voiceOrder.toggleFavorite("m_19"); app.voiceOrder.toggleFavorite("m_13"); app.voiceOrder.archive("m_9")
         shot("8_studio_favorites", Tab.Studio, "ערב טוב לכל האוהדים!")

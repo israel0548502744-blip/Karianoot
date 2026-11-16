@@ -242,7 +242,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         Section(Modifier.enter(3), title = "קול") {
             Segmented(listOf("הכל", "גברים", "נשים"), gender) { gender = it }
             val shown = app.voiceOrder.arrange((Catalog.voices + custom).filter { gender == 0 || (gender == 1 && !it.female) || (gender == 2 && it.female) }) { it.id }
-            Text("♥ = הקול עובר לראש הרשימה · לחיצה ארוכה על קול = העברה לארכיון", color = C.Faint, fontSize = 12.sp)
+            Text("לחיצה על הלב: הקול עובר לראש הרשימה. לחיצה ארוכה על קול: העברה לארכיון.", color = C.Faint, fontSize = 12.sp, lineHeight = 17.sp)
             val hearted = shown.filter { v -> v.id in favorites && v.needs.all { states[it] == ModelState.Ready } }
             if (hearted.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("המועדפים שלי", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
