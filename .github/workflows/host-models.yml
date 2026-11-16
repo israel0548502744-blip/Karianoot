@@ -1,0 +1,49 @@
+name: Host model files
+
+# Model files the app downloads, kept in this repo's permanent release "models-v1" (never deleted by any workflow):
+#  - Blue V3: the Hugging Face repo notmax123/BlueV3-onnx answers 404 since Nov 2026 (release check); the files come
+#    from our mirror (models-mirror/bluev3.tgz, fetched on Nov 8 at the pinned revision) and are checked by size.
+#  - Magpie q8_0: copied from the magpie-gguf prerelease (which magpie-cpp.yml deletes and remakes) and checked by sha256.
+# Prints each file's sha256 for Catalog.kt.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/host-models.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Blue V3 from the mirror
+        run: |
+          mkdir -p up
+          curl -sSL "https://github.com/$GITHUB_REPOSITORY/releases/download/models-mirror/bluev3.tgz" | tar xz
+          python3 - <<'PY'
+          import os, re, shutil
+          src = open("android/app/src/main/java/com/karianoot/app/Catalog.kt", encoding="utf-8").read()
+          body = src[src.index("val blueV3 = ModelInfo("):src.index("val blue25 = ModelInfo(")]
+          for path, size in re.findall(r'ModelFile\("([^"]+)", ([\d_]+)', body):
+              f = os.path.join("blue_v3", path); n = os.path.getsize(f)
+              assert n == int(size.replace("_", "")), (path, n, size)
+              shutil.copy(f, os.path.join("up", "bluev3-" + path.replace("/", "-")))
+              print("ok", path, n)
+          PY
+      - name: Magpie q8_0
+        run: |
+          gh release download magpie-gguf -R "$GITHUB_REPOSITORY" -p magpie-he-q8_0.gguf -D up
+          echo "5d1f2cffa97c6fbc83a53da2bf965d00cb7c4691feedc4dd0960a5e566ac51c4  up/magpie-he-q8_0.gguf" | sha256sum -c
+          curl -sSL -o up/NOTICE-magpie.txt "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/NOTICE.txt" || true
+      - name: Upload (adds files, never deletes the release)
+        run: |
+          gh release view models-v1 -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
+            gh release create models-v1 -R "$GITHUB_REPOSITORY" --prerelease --title "Model files for the app (permanent)" \
+              --notes "Model files the app downloads. Do not delete: installed apps point here. Blue V3: MIT (BlueTTS, notmax123). Magpie: NVIDIA Open Model License (see NOTICE-magpie.txt)."
+          gh release upload models-v1 up/* -R "$GITHUB_REPOSITORY" --clobber
+          cd up && sha256sum * && ls -l
