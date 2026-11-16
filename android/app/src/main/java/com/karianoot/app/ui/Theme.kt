@@ -230,7 +230,7 @@ fun GoldButton(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
                 }
             }
             .alpha(if (enabled) 1f else 0.4f)
-            .pressable(enabled, onClick),
+            .pressable(enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 24.dp)) {
@@ -245,7 +245,7 @@ fun SoftButton(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
                color: Color = C.Text, onClick: () -> Unit) {
     Row(
         modifier.height(48.dp).glass(CircleShape, strong = true).alpha(if (enabled) 1f else 0.4f)
-            .pressable(enabled, onClick).padding(horizontal = 16.dp),
+            .pressable(enabled, onClick = onClick).padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) { Icon(icon, null, tint = color, modifier = Modifier.size(19.dp)); Spacer(Modifier.width(8.dp)) }
