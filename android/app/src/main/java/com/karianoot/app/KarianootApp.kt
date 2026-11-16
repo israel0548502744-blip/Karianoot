@@ -64,6 +64,14 @@ class KarianootApp : Application() {
         Notify.createChannels(this)
     }
 
+    private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+    /** Setting: play a narration as soon as it is ready (on by default). */
+    var autoPlay: Boolean
+        get() = settings.getBoolean("autoplay", true)
+        set(v) { settings.edit().putBoolean("autoplay", v).apply() }
+    /** A narration just finished and should start playing once its card is on screen. */
+    val autoPlayPending = MutableStateFlow(false)
+
     fun narrate(text: String, voice: VoiceInfo, opt: BlueTts.Options) {
         if (_job.value.busy) return
         _job.value = JobState(busy = true, stage = "מתחיל…", startedAt = System.currentTimeMillis())
@@ -71,7 +79,7 @@ class KarianootApp : Application() {
         scope.launch {
             runCatching {
                 speech.speak(text, voice, opt) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
-            }.onSuccess { c -> _job.value = JobState(result = c) }
+            }.onSuccess { c -> autoPlayPending.value = autoPlay; _job.value = JobState(result = c) }
                 .onFailure { e -> _job.value = JobState(error = if (speech.wasCancelled()) "הקריינות בוטלה" else e.message ?: e.toString()) }
         }
     }

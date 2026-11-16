@@ -37,6 +37,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Unarchive
@@ -115,7 +118,7 @@ import kotlin.math.sin
 
 enum class Tab(val title: String, val icon: ImageVector) {
     Studio("סטודיו", Icons.Rounded.GraphicEq), Library("ההקלטות", Icons.Rounded.LibraryMusic),
-    Models("מודלים", Icons.Rounded.Memory), About("אודות", Icons.Rounded.Info)
+    Models("מודלים", Icons.Rounded.Memory), About("הגדרות", Icons.Rounded.Settings)
 }
 
 @Composable
@@ -218,6 +221,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         while (history.size > Speech.KEEP) history.removeAt(history.size - 1)
     }
     LaunchedEffect(job.error) { job.error?.let { Toast.makeText(ctx, if (it == "הקריינות בוטלה") it else "שגיאה: $it", Toast.LENGTH_LONG).show() } }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(10.dp))
         Column(Modifier.enter(0)) {
@@ -339,10 +343,18 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             }
         }
 
+        last?.let { CreationCard(it, app, history, highlight = true) { history.remove(it); speech.delete(it); app.clearResult() } }
+        // Room for the floating "צור קריינות" button.
+        Spacer(Modifier.height(120.dp))
+    }
+    // "צור קריינות" stays on screen while scrolling (the user asked not to scroll down for it every time).
+    Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+        .background(Brush.verticalGradient(listOf(Color.Transparent, C.Bg.copy(alpha = 0.92f), C.Bg)))
+        .padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (!busy && voice != null && text.isNotBlank()) speech.estimateSeconds(text, voice, speed)?.let { est ->
             Text("זמן משוער: " + formatSeconds(est.coerceAtLeast(1f)), color = C.Faint, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
         }
-        GoldButton(if (busy) "מקריא…" else "צור קריינות", Modifier.fillMaxWidth().enter(5), icon = Icons.Rounded.AutoAwesome,
+        GoldButton(if (busy) "מקריא… ${(job.progress * 100).toInt()}%" else "צור קריינות", Modifier.fillMaxWidth(), icon = Icons.Rounded.AutoAwesome,
             enabled = !busy && g2pReady && voice != null && text.isNotBlank()) {
             val v = voice ?: return@GoldButton
             // A template's [placeholders] not filled in yet would be read out as is.
@@ -351,9 +363,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             }
             app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive))
         }
-
-        last?.let { CreationCard(it, app, history, highlight = true) { history.remove(it); speech.delete(it); app.clearResult() } }
-        Spacer(Modifier.height(20.dp))
+    }
     }
 }
 
@@ -645,6 +655,18 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
     LaunchedEffect(playing) {
         while (playing) { pos = runCatching { player.currentPosition / player.duration.toFloat() }.getOrDefault(0f); delay(80) }
     }
+    // Setting "ניגון אוטומטי": a narration that just finished starts playing by itself (once).
+    val autoPending by app.autoPlayPending.collectAsState()
+    LaunchedEffect(c.file, autoPending) {
+        if (highlight && autoPending) {
+            app.autoPlayPending.value = false
+            runCatching {
+                player.reset(); player.setDataSource(c.file.path); player.prepare(); prepared = true
+                player.setOnCompletionListener { playing = false; pos = 0f; it.seekTo(0) }
+                player.start(); playing = true
+            }
+        }
+    }
     Column(Modifier.fillMaxWidth().then(if (highlight) Modifier.border(1.dp, C.GoldBrush, RoundedCornerShape(24.dp)) else Modifier).glass().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -792,7 +814,19 @@ fun AboutScreen(app: KarianootApp) {
     val custom by app.voices.custom.collectAsState()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Spacer(Modifier.height(10.dp))
-        GoldText("אודות", 30.sp)
+        GoldText("הגדרות", 30.sp)
+        Section(title = "השמעה") {
+            var auto by remember { mutableStateOf(app.autoPlay) }
+            Row(Modifier.fillMaxWidth().pressable { auto = !auto; app.autoPlay = auto }, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("ניגון אוטומטי בסיום", color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text("כשהקריינות מוכנה היא מתחילה להתנגן לבד.", color = C.Faint, fontSize = 13.sp)
+                }
+                Switch(auto, { auto = it; app.autoPlay = it }, colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF1A1307),
+                    checkedTrackColor = C.Gold, uncheckedThumbColor = C.Sub, uncheckedTrackColor = Color(0x22FFF4DC), uncheckedBorderColor = C.Stroke))
+            }
+        }
+        GoldText("אודות", 24.sp, Modifier.padding(top = 6.dp))
         Section {
             Text("קריינות מייצרת קול מטקסט בעברית, כולו בתוך הטלפון. שום טקסט או הקלטה לא נשלחים לאינטרנט; " +
                 "האינטרנט משמש רק להורדת המודלים.", color = C.Text, fontSize = 15.sp, lineHeight = 22.sp)
