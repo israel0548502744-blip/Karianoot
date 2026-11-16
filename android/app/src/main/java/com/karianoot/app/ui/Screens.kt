@@ -37,6 +37,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import com.karianoot.app.Updates
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material.icons.rounded.Settings
@@ -128,13 +130,15 @@ fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, moti
     var tab by remember { mutableStateOf(startTab) }
     val history = remember { mutableStateListOf<Creation>().apply { addAll(speech.history()) } }
     LaunchedEffect(Unit) { if (motion) models.watch() }
+    // Once per app start: is there a newer version? (Shown as a banner in the studio and in Settings.)
+    LaunchedEffect(Unit) { if (motion) app.updates.check() }
     KarianootTheme(motion) {
         Box(Modifier.fillMaxSize().background(C.Bg)) {
             NightBackground()
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                 Box(Modifier.weight(1f)) {
                     when (tab) {
-                        Tab.Studio -> StudioScreen(app, sharedText, history) { tab = Tab.Models }
+                        Tab.Studio -> StudioScreen(app, sharedText, history, openSettings = { tab = Tab.About }) { tab = Tab.Models }
                         Tab.Library -> LibraryScreen(app, history)
                         Tab.Models -> ModelsScreen(app)
                         Tab.About -> AboutScreen(app)
@@ -168,7 +172,7 @@ private fun BottomBar(tab: Tab, onSelect: (Tab) -> Unit) {
 }
 
 @Composable
-fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Creation>, openModels: () -> Unit) {
+fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Creation>, openSettings: () -> Unit = {}, openModels: () -> Unit) {
     val ctx = LocalContext.current
     val models = app.models
     val speech = app.speech
@@ -224,9 +228,21 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(10.dp))
-        Column(Modifier.enter(0)) {
-            GoldText("קריינות", 40.sp)
-            Text("קריינות בעברית, ישר מהטלפון. בלי אינטרנט.", color = C.Sub, fontSize = 15.sp)
+        Row(Modifier.enter(0), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                GoldText("קריינות", 40.sp)
+                Text("קריינות בעברית, ישר מהטלפון. בלי אינטרנט.", color = C.Sub, fontSize = 15.sp)
+            }
+            CircleIcon(Icons.Rounded.Settings, "הגדרות", size = 46.dp, onClick = openSettings)
+        }
+        val update by app.updates.state.collectAsState()
+        (update as? Updates.State.Available)?.let { u ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(1.dp, C.GoldBrush, RoundedCornerShape(18.dp))
+                .background(Color(0x1AE3BF6A)).pressable(onClick = openSettings).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.SystemUpdate, null, tint = C.Gold, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("יש גרסה חדשה (${u.number}). לחצו לעדכון.", color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
         }
 
         if (!g2pReady || ready.isEmpty()) {
@@ -809,6 +825,31 @@ private fun MyVoices(app: KarianootApp) {
     }
 }
 
+/** The app's version, "בדיקת עדכונים", and the newer APK when there is one. */
+@Composable
+private fun UpdatesPanel(app: KarianootApp) {
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val state by app.updates.state.collectAsState()
+    Text("הגרסה שלך: ${app.updates.current}", color = C.Sub, fontSize = 14.sp)
+    when (val s = state) {
+        Updates.State.Checking -> Text("בודק…", color = C.Faint, fontSize = 13.sp)
+        Updates.State.UpToDate -> Text("✓ יש לך את הגרסה האחרונה.", color = C.Green, fontSize = 14.sp)
+        is Updates.State.Failed -> Text(s.reason, color = C.Red, fontSize = 13.sp)
+        is Updates.State.Available -> {
+            Text("יש גרסה חדשה: ${s.number}", color = C.Gold, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            GoldButton("הורד והתקן", Modifier.fillMaxWidth(), icon = Icons.Rounded.SystemUpdate) {
+                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(s.apk))) }
+            }
+            Text("הקובץ יירד בדפדפן. פותחים אותו ומאשרים התקנה. המודלים, הקולות וההקלטות נשארים.", color = C.Faint, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+        Updates.State.Idle -> {}
+    }
+    SoftButton("בדיקת עדכונים", Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, enabled = state != Updates.State.Checking) {
+        scope.launch { app.updates.check() }
+    }
+}
+
 @Composable
 fun AboutScreen(app: KarianootApp) {
     val custom by app.voices.custom.collectAsState()
@@ -825,6 +866,17 @@ fun AboutScreen(app: KarianootApp) {
                 Switch(auto, { auto = it; app.autoPlay = it }, colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF1A1307),
                     checkedTrackColor = C.Gold, uncheckedThumbColor = C.Sub, uncheckedTrackColor = Color(0x22FFF4DC), uncheckedBorderColor = C.Stroke))
             }
+        }
+        Section(title = "עדכונים") { UpdatesPanel(app) }
+        Section(title = "קולות והגייה") {
+            var fixesOpen by remember { mutableStateOf(false) }
+            var archiveOpen by remember { mutableStateOf(false) }
+            val archived by app.voiceOrder.archived.collectAsState()
+            val archivedVoices = (Catalog.voices + custom).map(app.voiceOrder::named).filter { it.id in archived }
+            SoftButton("תיקוני הגייה", Modifier.fillMaxWidth(), icon = Icons.Rounded.RecordVoiceOver) { fixesOpen = true }
+            SoftButton("ארכיון קולות (${archivedVoices.size})", Modifier.fillMaxWidth(), icon = Icons.Rounded.Inventory2) { archiveOpen = true }
+            if (fixesOpen) PronounceDialog(app) { fixesOpen = false }
+            if (archiveOpen) ArchiveDialog(archivedVoices, onRestore = { app.voiceOrder.restore(it.id) }) { archiveOpen = false }
         }
         GoldText("אודות", 24.sp, Modifier.padding(top = 6.dp))
         Section {
