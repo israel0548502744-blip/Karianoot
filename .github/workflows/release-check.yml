@@ -1,0 +1,29 @@
+name: Release check
+
+# Before going live: every model file the app downloads (Catalog.kt) is fetched from its pinned URL and checked
+# against its pinned size (and sha256 where pinned). Results: prerelease "release-check" (downloads.json).
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/release-check.yml", "tools/release/**", "android/app/src/main/java/com/karianoot/app/Catalog.kt"]
+
+permissions:
+  contents: write
+
+jobs:
+  downloads:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and check every model file
+        run: python3 tools/release/check_downloads.py android/app/src/main/java/com/karianoot/app/Catalog.kt downloads.json
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls downloads.json || exit 0
+          gh release delete release-check -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create release-check downloads.json -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Release check" --notes "Every model download of the app checked (size, sha256). Not the app."
