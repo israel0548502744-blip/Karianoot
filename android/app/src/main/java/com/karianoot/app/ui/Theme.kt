@@ -135,16 +135,10 @@ fun KarianootTheme(motion: Boolean = true, content: @Composable () -> Unit) {
     }
 }
 
-private class Glint(val x: Float, val y: Float, val r: Float, val phase: Float, val speed: Float, val star: Boolean)
 
-/** Black night with a warm glow at the top and gold dust that twinkles. */
+/** Black night with a warm glow at the top (the user asked for no dots or stars). */
 @Composable
 fun NightBackground(modifier: Modifier = Modifier) {
-    val glints = remember {
-        val rnd = Random(7)
-        List(46) { Glint(rnd.nextFloat(), rnd.nextFloat(), 0.6f + rnd.nextFloat() * 1.8f, rnd.nextFloat() * 6.28f, 0.5f + rnd.nextFloat(), rnd.nextFloat() < 0.18f) }
-    }
-    val t = loop(9000)
     Canvas(modifier.fillMaxSize()) {
         drawRect(Brush.verticalGradient(listOf(C.BgTop, C.Bg, C.Bg)))
         val w = size.width; val h = size.height
@@ -152,13 +146,6 @@ fun NightBackground(modifier: Modifier = Modifier) {
             radius = w * 0.95f, center = Offset(w * 0.75f, -h * 0.02f))
         drawCircle(Brush.radialGradient(listOf(Color(0x149C7424), Color.Transparent), center = Offset(w * 0.1f, h * 0.85f), radius = w * 0.8f),
             radius = w * 0.8f, center = Offset(w * 0.1f, h * 0.85f))
-        for (g in glints) {
-            val a = (0.5f + 0.5f * sin(t * 2f * PI.toFloat() * g.speed + g.phase)).let { it * it }
-            val c = Offset(g.x * w, g.y * h)
-            val r = g.r.dp.toPx()
-            drawCircle(C.GoldLight.copy(alpha = 0.12f + 0.55f * a), r, c)
-            if (g.star && a > 0.55f) sparkle(c, r * 5f * a, C.GoldLight.copy(alpha = a * 0.8f))
-        }
     }
 }
 
@@ -209,11 +196,10 @@ fun Section(modifier: Modifier = Modifier, title: String? = null, content: @Comp
     }
 }
 
-/** The main action: liquid gold with a light sweep and twinkles on both sides. */
+/** The main action: liquid gold with a light sweep. */
 @Composable
 fun GoldButton(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, enabled: Boolean = true, onClick: () -> Unit) {
     val sweep = loop(2600, -0.4f, 1.4f, delay = 700, still = 0.3f)
-    val tw = loop(1800, still = 0.25f)
     Box(
         modifier.height(60.dp)
             .shadow(if (enabled) 22.dp else 0.dp, CircleShape, ambientColor = C.Gold, spotColor = C.Gold)
@@ -224,9 +210,6 @@ fun GoldButton(text: String, modifier: Modifier = Modifier, icon: ImageVector? =
                     val x = size.width * sweep
                     drawRect(Brush.linearGradient(listOf(Color.Transparent, Color(0x88FFFFFF), Color.Transparent),
                         start = Offset(x - 110f, 0f), end = Offset(x + 110f, size.height)))
-                    val a = (sin(tw * 2 * PI.toFloat()) * 0.5f + 0.5f)
-                    sparkle(Offset(size.width * 0.12f, size.height * 0.3f), 7.dp.toPx() * (0.4f + 0.6f * a), Color.White.copy(alpha = 0.85f * a))
-                    sparkle(Offset(size.width * 0.88f, size.height * 0.68f), 6.dp.toPx() * (1f - 0.6f * a), Color.White.copy(alpha = 0.85f * (1f - a)))
                 }
             }
             .alpha(if (enabled) 1f else 0.4f)
