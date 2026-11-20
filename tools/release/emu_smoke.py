@@ -84,7 +84,9 @@ step("tab_library", lambda: tap("ההקלטות"))
 step("tab_models", lambda: tap("מודלים"))
 step("tab_settings", lambda: tap("הגדרות"))
 step("check_updates", lambda: (tap("בדיקת עדכונים"), time.sleep(5)))
-step("pronounce_dialog", lambda: (tap("תיקוני הגייה"), adb("shell", "input", "keyevent", "4"), time.sleep(1)))
+def scroll_down():
+    adb("shell", "input", "swipe", "500", "1500", "500", "500", "300"); time.sleep(1)
+step("pronounce_dialog", lambda: (scroll_down(), tap("תיקוני הגייה"), adb("shell", "input", "keyevent", "4"), time.sleep(1)))
 step("tab_studio", lambda: tap("סטודיו"))
 step("rotate_and_back", lambda: (adb("shell", "settings", "put", "system", "user_rotation", "1"), time.sleep(3),
                                  adb("shell", "settings", "put", "system", "user_rotation", "0"), time.sleep(3)))

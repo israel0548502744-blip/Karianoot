@@ -38,7 +38,7 @@ jobs:
           du -sh models/*
       - name: Install the original packages
         run: |
-          pip install -q onnxruntime soundfile "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS"
+          pip install -q onnxruntime soundfile "renikud-plus @ git+https://github.com/maxmelichov/RenikudPlus@93a82fad122207f9dc38105ceb5068e98d00f092" "blue-onnx @ git+https://github.com/maxmelichov/BlueTTS@acc04f06183fd6c85c2a94fe0246290a31fb47f5"
           pip show blue-onnx renikud-plus | grep -E "Name|Version"
       - name: Build golden data
         run: python tools/reference.py models golden
