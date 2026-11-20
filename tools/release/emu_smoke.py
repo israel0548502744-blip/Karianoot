@@ -105,7 +105,10 @@ if narrate:
         raise RuntimeError("downloads did not finish in 25 minutes")
     def make():
         tap("סטודיו")
-        tap("כתבו או הדביקו")
+        c = find("כתבו או הדביקו", wait=10) or find("תווים", wait=5)
+        if not c: raise RuntimeError("no text box")
+        adb("shell", "input", "tap", str(c[0]), str(c[1] - 150))
+        time.sleep(1)
         adb("shell", "input", "text", "shalom")     # ASCII through adb; the app reads it out through the G2P path
         adb("shell", "input", "keyevent", "4")
         tap("צור קריינות")

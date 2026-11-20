@@ -11,7 +11,7 @@ on:
     types: [completed]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   smoke:
@@ -39,8 +39,13 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: python3 tools/release/emu_smoke.py Karianoot.apk out --narrate
-      - uses: actions/upload-artifact@v4
+      - name: Publish screens and errors (prerelease emulator-smoke)
         if: always()
-        with:
-          name: emulator-screens
-          path: out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls out || exit 0
+          tar czf emulator.tgz out
+          gh release delete emulator-smoke -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create emulator-smoke emulator.tgz -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Emulator smoke test" --notes "Screens and errors of the APK on an emulator. Not the app."

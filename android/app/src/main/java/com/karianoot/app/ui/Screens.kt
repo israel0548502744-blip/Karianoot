@@ -128,14 +128,14 @@ enum class Tab(val title: String, val icon: ImageVector) {
 }
 
 @Composable
-fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, motion: Boolean = true) {
+fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, motion: Boolean = true, live: Boolean = motion) {
     val models = app.models
     val speech = app.speech
     var tab by remember { mutableStateOf(startTab) }
     val history = remember { mutableStateListOf<Creation>().apply { addAll(speech.history()) } }
-    LaunchedEffect(Unit) { if (motion) models.watch() }
+    LaunchedEffect(Unit) { if (live) models.watch() }
     // Once per app start: is there a newer version? (Shown as a banner in the studio and in Settings.)
-    LaunchedEffect(Unit) { if (motion) app.updates.check() }
+    LaunchedEffect(Unit) { if (live) app.updates.check() }
     KarianootTheme(motion) {
         Box(Modifier.fillMaxSize().background(C.Bg)) {
             NightBackground()
