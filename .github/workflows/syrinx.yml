@@ -1,0 +1,87 @@
+name: Blue int8 (Syrinx) probe
+
+# Blue 2.5 float vs. the int8 vector estimator + vocoder of dtsj89/puki-syrinx (MIT): speed, size and words heard right.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/syrinx.yml", "android/engine/src/test/kotlin/com/karianoot/engine/SyrinxTest.kt"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SYRINX_REV: 4e9ec197665804435bac30452a9e52e101405886
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Models
+        run: |
+          B=https://github.com/$GITHUB_REPOSITORY/releases/download/models-v1
+          S=sx; mkdir -p $S/float/voices $S/renikud
+          for f in tts.json vocab.json stats.npz uncond.npz duration_predictor_style.onnx text_encoder.onnx vector_estimator.onnx vocoder.onnx; do
+            curl -sSL -o $S/float/$f $B/blue_25-$f; done
+          for v in female libri_male_8088; do curl -sSL -o $S/float/voices/$v.json $B/blue_25-voices-$v.json; done
+          cp -r $S/float $S/int8
+          for f in vector_estimator.onnx vocoder.onnx LICENSE-BlueTTS README.md; do
+            curl -sSL -o $S/int8/$f "https://huggingface.co/dtsj89/puki-syrinx/resolve/$SYRINX_REV/$f"; done
+          curl -sSL -o $S/renikud/model_int8.onnx $B/g2p-model_int8.onnx
+          cp tools/magpie/passage.json $S/
+          ls -la $S/float $S/int8; sha256sum $S/int8/vector_estimator.onnx $S/int8/vocoder.onnx
+          head -20 $S/int8/LICENSE-BlueTTS
+      - name: Speak (float and int8)
+        env:
+          KARIANOOT_SYRINX: ${{ github.workspace }}/sx
+        run: gradle -p android :engine:test --tests 'com.karianoot.engine.SyrinxTest' --no-daemon -i 2>&1 | grep -E "CHECK|FAIL|Exception|at com" | head -40
+      - name: Listen
+        run: |
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          pip install -q faster-whisper soundfile scipy numpy
+          python - <<'PY'
+          import glob, json, os, re, unicodedata
+          import numpy as np, soundfile as sf
+          from scipy.signal import resample_poly
+          from faster_whisper import WhisperModel
+          asr = WhisperModel("asr", device="cpu", compute_type="int8")
+          texts = [p["text"] for p in json.load(open("sx/passage.json", encoding="utf-8"))["pieces"]]
+          def norm(s): return "".join(c for c in unicodedata.normalize("NFD", s) if "א" <= c <= "ת")
+          def cer(r, h):
+              r, h = norm(r), norm(h); d = list(range(len(h) + 1))
+              for i in range(1, len(r) + 1):
+                  prev, d[0] = d[0], i
+                  for j in range(1, len(h) + 1):
+                      cur = min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1])); prev, d[j] = d[j], cur
+              return d[len(h)] / max(1, len(r))
+          res = {}
+          for f in sorted(glob.glob("sx/takes/*.wav")):
+              key, i = os.path.basename(f)[:-4].rsplit("_", 1)
+              a, sr = sf.read(f, dtype="float32")
+              hyp = " ".join(s.text for s in asr.transcribe(resample_poly(a, 16000, sr).astype(np.float32), language="he", beam_size=5)[0])
+              res.setdefault(key, []).append(cer(texts[int(i)], hyp))
+          times = json.load(open("sx/times.json"))
+          out = {k: {"cer": round(float(np.mean(v)), 4), **{t: round(x, 3) for t, x in times[k].items()}} for k, v in res.items()}
+          json.dump(out, open("syrinx.json", "w"), indent=1); print(json.dumps(out, indent=1))
+          PY
+          ls -la sx/int8/*.onnx sx/float/*.onnx
+          (cd sx && tar czf ../takes.tgz takes)
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls syrinx.json || exit 0
+          gh release delete syrinx-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create syrinx-probe syrinx.json takes.tgz -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "Blue int8 (Syrinx) probe" --notes "Blue 2.5 float vs int8 graphs: speed and ASR. Not the app."
