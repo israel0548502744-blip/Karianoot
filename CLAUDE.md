@@ -141,6 +141,25 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   to restore (`VoiceOrder.kt`, prefs `voice_order`); rename (✎) and sample (▶, "תכירו את ישראל, סוכן הנסיעות הטוב בעולם!")
   on every voice; floating "צור קריינות"; Settings tab (was About) with "ניגון אוטומטי בסיום" (default on).
 
+## Nov 20 2026 ("let's do everything")
+- `release-check.yml` runs daily (cron) and opens an issue when a model download breaks. `host-models.yml` only ADDS missing
+  files to models-v1 (replacing deletes first = 404 for installs in progress; it happened once, transiently).
+- Crash log (`CrashLog.kt`): written on the phone, offered for sending (share sheet) on the next start. Backup/restore
+  (`Backup.kt`, Settings): zip of voices/, creations/, pronounce.json and prefs voice_order/settings/studio; restore restarts the app.
+- Flavors: `personal` (GitHub APK, fixed public key, includes Namer: assets in src/personal) and `store` (applicationId
+  com.karianoot.narration, no personal-only voices, AAB, upload key only from CI secrets KARIANOOT_UPLOAD_*; CI checks the
+  AAB has no "namer"). "דיווח על תוכן" (flag icon) on every narration (BuildConfig.SUPPORT_EMAIL from CI, else share sheet).
+  docs/privacy.md, docs/store-listing.md. The personal key's password is in git: never use it for the Play build.
+- NVIDIA Open Model License (text in models-v1/license-nvidia-open-model-license.txt, "Last Modified: October 24, 2025"):
+  perpetual but revocable if we sue over the model or bypass guardrails; NVIDIA "may update this Agreement to comply with
+  legal and regulatory requirements" (comply or stop). Redistribution needs the agreement + the exact notice
+  "Licensed by NVIDIA Corporation under the NVIDIA Open Model License" -> in Catalog.credit, About link, models-v1/magpie-NOTICE.txt.
+- Emulator smoke test (`emulator.yml`, after every APK build): install, tabs, dialogs, rotate, background, model download:
+  green. Narration cannot run there: the x86 ARM translator lacks LSE atomics (SIGILL in ndk_translation). The app turns its
+  animations off when the phone's animator scale is 0 (otherwise uiautomator never sees the studio idle).
+- Proofreader covers Blue 2.5 too (`BlueProofTest`, job "blue", report_blue.md). Background music (`Mixer.kt`,
+  "הוספת מוזיקת רקע": copy with music at 5-40%, looped, faded). Syrinx int8 Blue probe: `syrinx.yml`.
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).
