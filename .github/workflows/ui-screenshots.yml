@@ -28,7 +28,7 @@ jobs:
           gradle-version: "8.14.3"
 
       - name: Render screens
-        run: gradle -p android :app:testDebugUnitTest --tests '*ScreenshotTest*' --tests '*VoiceOrderTest*' --tests '*UpdatesTest*' --no-daemon
+        run: gradle -p android :app:testDebugUnitTest --tests '*ScreenshotTest*' --tests '*VoiceOrderTest*' --tests '*UpdatesTest*' --tests '*BackupTest*' --no-daemon
 
       - name: Show test failures
         if: failure()

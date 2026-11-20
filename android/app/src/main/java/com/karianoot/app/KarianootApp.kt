@@ -33,6 +33,8 @@ class KarianootApp : Application() {
     lateinit var pronounce: Pronunciations
     lateinit var voiceOrder: VoiceOrder
     lateinit var updates: Updates
+    lateinit var crashes: CrashLog
+    val backup by lazy { Backup(this) }
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _job = MutableStateFlow(JobState())
     val job: StateFlow<JobState> = _job
@@ -44,6 +46,7 @@ class KarianootApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        crashes = CrashLog(this).also { it.install() }
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(a: android.app.Activity) {
                 started++; inForeground = true

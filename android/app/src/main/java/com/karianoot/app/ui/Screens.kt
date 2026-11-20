@@ -37,6 +37,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.Backup
 import com.karianoot.app.Updates
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.SwitchDefaults
@@ -234,6 +236,21 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 Text("קריינות בעברית, ישר מהטלפון. בלי אינטרנט.", color = C.Sub, fontSize = 15.sp)
             }
             CircleIcon(Icons.Rounded.Settings, "הגדרות", size = 46.dp, onClick = openSettings)
+        }
+        val crash by app.crashes.pending.collectAsState()
+        crash?.let { report ->
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(1.dp, C.Stroke, RoundedCornerShape(18.dp))
+                .background(Color(0x14FFF4DC)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("האפליקציה נסגרה בפעם הקודמת בגלל תקלה. לשלוח את הפרטים כדי שנתקן?", color = C.Text, fontSize = 14.sp, lineHeight = 20.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SoftButton("שליחה", icon = Icons.Rounded.Share, color = C.Gold) {
+                        runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                            .putExtra(Intent.EXTRA_SUBJECT, "קריינות – דוח תקלה").putExtra(Intent.EXTRA_TEXT, report), "שליחת דוח תקלה")) }
+                        app.crashes.dismiss()
+                    }
+                    SoftButton("לא עכשיו", onClick = { app.crashes.dismiss() })
+                }
+            }
         }
         val update by app.updates.state.collectAsState()
         (update as? Updates.State.Available)?.let { u ->
@@ -825,6 +842,40 @@ private fun MyVoices(app: KarianootApp) {
     }
 }
 
+/** Backup to one file (to keep, or to move to a new phone) and restore from it; the app restarts after a restore. */
+@Composable
+private fun BackupPanel(app: KarianootApp) {
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    fun run(work: () -> String) { busy = true; scope.launch {
+        val msg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching(work).getOrElse { "לא הצלחתי: ${it.message}" } }
+        busy = false; Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+    } }
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) run { "הגיבוי נשמר (${app.backup.export(uri)} קבצים)" }
+    }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) run {
+            val n = app.backup.restore(uri)
+            // Every list (voices, fixes, hearts) reads its files at start: open the app again.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)?.let { ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                kotlin.system.exitProcess(0)
+            }, 1500)
+            "השחזור הושלם ($n קבצים). האפליקציה נפתחת מחדש…"
+        }
+    }
+    Text("קובץ אחד עם הקולות שיצרת, תיקוני ההגייה, ההקלטות, המועדפים, השמות וההגדרות. המודלים לא בפנים: הם יורדים שוב לבד.",
+        color = C.Faint, fontSize = 13.sp, lineHeight = 18.sp)
+    SoftButton(if (busy) "רגע…" else "שמירת גיבוי", Modifier.fillMaxWidth(), icon = Icons.Rounded.Backup, enabled = !busy) {
+        save.launch("karianoot-backup-${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())}.zip")
+    }
+    SoftButton("שחזור מגיבוי", Modifier.fillMaxWidth(), icon = Icons.Rounded.Restore, enabled = !busy) {
+        open.launch(arrayOf("application/zip", "application/octet-stream"))
+    }
+}
+
 /** The app's version, "בדיקת עדכונים", and the newer APK when there is one. */
 @Composable
 private fun UpdatesPanel(app: KarianootApp) {
@@ -878,6 +929,7 @@ fun AboutScreen(app: KarianootApp) {
             if (fixesOpen) PronounceDialog(app) { fixesOpen = false }
             if (archiveOpen) ArchiveDialog(archivedVoices, onRestore = { app.voiceOrder.restore(it.id) }) { archiveOpen = false }
         }
+        Section(title = "גיבוי") { BackupPanel(app) }
         GoldText("אודות", 24.sp, Modifier.padding(top = 6.dp))
         Section {
             Text("קריינות מייצרת קול מטקסט בעברית, כולו בתוך הטלפון. שום טקסט או הקלטה לא נשלחים לאינטרנט; " +
