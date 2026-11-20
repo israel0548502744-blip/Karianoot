@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Backup
@@ -954,6 +955,10 @@ fun AboutScreen(app: KarianootApp) {
                     Text("${m.credit} · רישיון ${m.license}", color = C.Sub, fontSize = 13.sp)
                     Text(m.home, color = C.Faint, fontSize = 12.sp, textAlign = TextAlign.Start)
                 }
+            }
+            val ctx = LocalContext.current
+            SoftButton("נוסח הרישיון של NVIDIA (Magpie)", Modifier.fillMaxWidth(), icon = Icons.Rounded.Description) {
+                runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("${Catalog.MODELS_V1}/license-nvidia-open-model-license.txt"))) }
             }
             Text("ONNX Runtime — Microsoft, רישיון MIT", color = C.Sub, fontSize = 13.sp)
             Text("גופן Rubik — רישיון SIL Open Font License", color = C.Sub, fontSize = 13.sp)

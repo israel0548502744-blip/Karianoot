@@ -139,8 +139,9 @@ object Catalog {
         title = "Magpie עברית",
         subtitle = "קולות עבריים טבעיים מאוד (בבדיקה: 99% מהמילים נשמעו נכון). קטן ומהיר יותר מ-Qwen.",
         license = "NVIDIA Open Model License",
-        credit = "Magpie TTS Multilingual 357M (NVIDIA, NVIDIA Open Model License), Hebrew fine-tune by notmax123; " +
-            "engine magpie-tts.cpp (MIT)",
+        // The license asks for this exact notice and a copy of the agreement for everyone who gets the model.
+        credit = "Licensed by NVIDIA Corporation under the NVIDIA Open Model License. Magpie TTS Multilingual 357M (NVIDIA), " +
+            "Hebrew fine-tune by notmax123; engine magpie-tts.cpp (MIT)",
         home = "huggingface.co/notmax123/magpie_tts_multilingual_357m-he · github.com/mudler/magpie-tts.cpp",
         files = listOf(ModelFile(MAGPIE_FILE, 603_088_864,
             url = "$MODELS_V1/$MAGPIE_FILE",

@@ -94,10 +94,18 @@ jobs:
           curl -sSL -o up/license-nvidia_magpie_tts_multilingual_357m-README.md \
             "https://huggingface.co/nvidia/magpie_tts_multilingual_357m/resolve/main/README.md" || true
           ls -la up/license-* 
-      - name: Upload (adds files, never deletes the release)
+      - name: Magpie notice in the exact words the NVIDIA Open Model License asks for
+        run: |
+          printf '%s\n\n%s\n' "Licensed by NVIDIA Corporation under the NVIDIA Open Model License" \
+            "magpie-he-q8_0.gguf: notmax123/magpie_tts_multilingual_357m-he (fine-tune of nvidia/magpie_tts_multilingual_357m) and nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps, converted for magpie-tts.cpp. Agreement: license-nvidia-open-model-license.txt in this release." > up/magpie-NOTICE.txt
+      - name: Upload (adds missing files only; never deletes or replaces)
         run: |
           gh release view models-v1 -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
             gh release create models-v1 -R "$GITHUB_REPOSITORY" --prerelease --title "Model files for the app (permanent)" \
               --notes "Model files the app downloads. Do not delete: installed apps point here. Blue V3: MIT (BlueTTS, notmax123). Magpie: NVIDIA Open Model License (see NOTICE-magpie.txt)."
-          gh release upload models-v1 up/* -R "$GITHUB_REPOSITORY" --clobber
+          # Never replace a file that is already there: replacing deletes it first, and installs in progress would get 404.
+          have=$(gh release view models-v1 -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+          for f in up/*; do
+            if echo "$have" | grep -qxF "$(basename "$f")"; then echo "kept $(basename "$f")"; else gh release upload models-v1 "$f" -R "$GITHUB_REPOSITORY"; fi
+          done
           cd up && sha256sum * && ls -l
