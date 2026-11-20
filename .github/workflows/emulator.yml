@@ -1,0 +1,46 @@
+name: Emulator smoke test
+
+# The real APK (latest release) on an Android 14 emulator: install, open, every tab and dialog, rotate, background,
+# then download two models through the app and make a narration. Any crash fails it. Screens and errors: artifact.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/emulator.yml", "tools/release/emu_smoke.py"]
+  workflow_run:
+    workflows: ["Build Karianoot APK"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: The latest APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download -R "$GITHUB_REPOSITORY" --pattern Karianoot.apk -D . && ls -la Karianoot.apk
+      - name: Run on the emulator (x86_64 image with ARM translation for the arm64 APK)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          ram-size: 6144M
+          disk-size: 8G
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 tools/release/emu_smoke.py Karianoot.apk out --narrate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-screens
+          path: out
