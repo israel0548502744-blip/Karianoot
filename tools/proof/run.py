@@ -16,7 +16,9 @@ from faster_whisper import WhisperModel
 
 cli, gguf, pieces_path, asr_dir, out, shard, shards, speakers = sys.argv[1:9]
 shard, shards = int(shard), int(shards)
-speakers = [int(x) for x in speakers.split(",")]
+speakers = speakers.split(",")
+# PROOF_WAVS: the takes were already made (Blue, by BlueProofTest); just listen to them.
+made = os.environ.get("PROOF_WAVS")
 pieces = [json.loads(l) for l in open(pieces_path, encoding="utf-8")]
 mine = [p for i, p in enumerate(pieces) if i % shards == shard]
 asr = WhisperModel(asr_dir, device="cpu", compute_type="int8")
@@ -55,8 +57,8 @@ for k, p in enumerate(mine):
     row = {k2: p[k2] for k2 in ("sentence", "piece", "source", "text", "spoken", "ipa", "variant") if k2 in p}
     row["takes"] = {}
     for spk in speakers:
-        wav = os.path.join(out, f"s{p['sentence']}_{p['piece']}_spk{spk}.wav")
-        r = subprocess.run([cli, "say", "--model", gguf, "--text", p["ipa"], "--lang", "he", "--speaker", str(spk),
+        wav = os.path.join(made or out, f"s{p['sentence']}_{p['piece']}_spk{spk}.wav")
+        r = subprocess.CompletedProcess([], 0, "", "") if made else subprocess.run([cli, "say", "--model", gguf, "--text", p["ipa"], "--lang", "he", "--speaker", str(spk),
                             "--seed", str(p.get("seed", 1000 + p["sentence"])), "--threads", str(os.cpu_count() or 4), "--output", wav],
                            capture_output=True, text=True, env=dict(os.environ, MAGPIE_PRIOR="0"))
         if r.returncode != 0 or not os.path.exists(wav):
@@ -69,7 +71,7 @@ for k, p in enumerate(mine):
         heard = " ".join(x.text for x in segs).strip()
         row["takes"][spk] = {"heard": heard, "seconds": round(len(a) / sr, 2), "missed": missed(p["spoken"], heard),
                            "sim": round(difflib.SequenceMatcher(a="".join(words(p["spoken"])), b="".join(words(heard)), autojunk=False).ratio(), 3)}
-        os.remove(wav)
+        if not made: os.remove(wav)
     rows.append(row)
     print(f"[{k + 1}/{len(mine)} {time.time() - t_start:.0f}s] " +
           " | ".join(f"{s}: {len(t.get('missed', []))}" for s, t in row["takes"].items()) + f" | {p['text']}", flush=True)

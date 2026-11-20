@@ -77,8 +77,58 @@ jobs:
           name: proof-${{ matrix.shard }}
           path: out/proof_*.json
 
+  blue:
+    needs: ipa
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - uses: actions/download-artifact@v4
+        with:
+          name: pieces
+          path: proof
+      - name: Models (the app's own copies) and the recognizer
+        run: |
+          B=https://github.com/$GITHUB_REPOSITORY/releases/download/models-v1
+          mkdir -p models/blue_25/voices proof/renikud
+          for f in tts.json vocab.json stats.npz uncond.npz duration_predictor_style.onnx text_encoder.onnx vector_estimator.onnx vocoder.onnx; do
+            curl -sSL -o models/blue_25/$f $B/blue_25-$f; done
+          for v in female libri_male_8088; do curl -sSL -o models/blue_25/voices/$v.json $B/blue_25-voices-$v.json; done
+          curl -sSL -o proof/renikud/model_int8.onnx $B/g2p-model_int8.onnx
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          pip install -q faster-whisper soundfile scipy numpy
+      - name: Speak (Blue 2.5, the app's path)
+        env:
+          KARIANOOT_PROOF: ${{ github.workspace }}/proof
+          KARIANOOT_MODELS: ${{ github.workspace }}/models
+          PROOF_SHARD: ${{ matrix.shard }}
+          PROOF_SHARDS: "6"
+        run: gradle -p android :engine:test --tests 'com.karianoot.engine.BlueProofTest' --no-daemon -i 2>&1 | grep -E "CHECK|FAIL|Exception" || true
+      - name: Listen
+        env:
+          PROOF_WAVS: ${{ github.workspace }}/proof/blue
+        run: python tools/proof/run.py - - proof/pieces.jsonl asr out ${{ matrix.shard }} 6 female,libri_male_8088
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blueproof-${{ matrix.shard }}
+          path: out/proof_*.json
+
   report:
-    needs: speak
+    needs: [speak, blue]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -88,12 +138,18 @@ jobs:
         with:
           pattern: proof-*
           path: shards
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: blueproof-*
+          path: blueshards
       - name: Report
-        run: python3 tools/proof/report.py shards rel
+        run: |
+          python3 tools/proof/report.py shards rel
+          python3 tools/proof/report.py blueshards blue && mv blue/report.md rel/report_blue.md && mv blue/report.json rel/report_blue.json || true
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete proofread -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
-          gh release create proofread rel/report.md rel/report.json -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+          gh release create proofread rel/* -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
             --title "Automatic proofreader" --notes "Words Magpie + the app's text path got wrong, found by the recognizer. Not the app."
