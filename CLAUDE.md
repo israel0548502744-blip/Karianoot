@@ -159,6 +159,10 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
   animations off when the phone's animator scale is 0 (otherwise uiautomator never sees the studio idle).
 - Proofreader covers Blue 2.5 too (`BlueProofTest`, job "blue", report_blue.md). Background music (`Mixer.kt`,
   "הוספת מוזיקת רקע": copy with music at 5-40%, looped, faded). Syrinx int8 Blue probe: `syrinx.yml`.
+- Syrinx int8 Blue 2.5 (dtsj89/puki-syrinx @4e9ec19, MIT): CER equal (female 1.1%/0.6%, male 0.6%), work/audio 0.34->0.26
+  (s10) on CI x86, graphs 233 MB -> 71 MB. Blind A/B in picker r16_blue_int8: female A=int8 B=float; male A=float B=int8.
+- Golden test broke on Nov 20 because upstream BlueTTS (Python reference) switched to an int8 vector estimator on Nov 19:
+  reference.yml now pins BlueTTS@acc04f0 and RenikudPlus@93a82fa.
 
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
