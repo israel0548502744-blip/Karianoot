@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Restore
@@ -685,6 +686,15 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
     var playing by remember(c) { mutableStateOf(false) }
     var pos by remember(c) { mutableFloatStateOf(0f) }
     var prepared by remember(c) { mutableStateOf(false) }
+    var musicOpen by remember(c) { mutableStateOf(false) }
+    if (musicOpen) MusicDialog(onAdd = { uri, level ->
+        musicOpen = false
+        Toast.makeText(ctx, "מוסיף מוזיקה…", Toast.LENGTH_SHORT).show()
+        app.addMusic(c, uri, level) { r ->
+            if (r == null) Toast.makeText(ctx, "לא הצלחתי להוסיף את המוזיקה", Toast.LENGTH_LONG).show()
+            else { history.add(0, r); Toast.makeText(ctx, "נוצרה הקלטה חדשה עם מוזיקה (בהקלטות)", Toast.LENGTH_LONG).show() }
+        }
+    }) { musicOpen = false }
     val player = remember(c) { MediaPlayer() }
     DisposableEffect(c) { onDispose { player.release() } }
     LaunchedEffect(playing) {
@@ -737,6 +747,7 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
             CircleIcon(Icons.Rounded.Flag, "דיווח על תוכן", tint = C.Sub) { reportContent(ctx, c.text, c.voice) }
             CircleIcon(Icons.Rounded.Delete, "מחק", tint = C.Red, onClick = onDelete)
         }
+        SoftButton("הוספת מוזיקת רקע", Modifier.fillMaxWidth(), icon = Icons.Rounded.MusicNote) { musicOpen = true }
         if (c.parts.size > 1 && c.voiceId.isNotEmpty())
             SoftButton(if (showParts) "סגירת תיקון משפטים" else "משפט יצא לא טוב? תיקון משפט", Modifier.fillMaxWidth(), icon = Icons.Rounded.Tune,
                 color = if (showParts) C.Gold else C.Text) { showParts = !showParts }
@@ -844,6 +855,31 @@ private fun MyVoices(app: KarianootApp) {
         }
         SoftButton("מחק", icon = Icons.Rounded.Delete, color = C.Red) { app.voices.delete(v) }
     }
+}
+
+/** Background music: pick a song or beat from the phone and how loud it plays under the voice. */
+@Composable
+private fun MusicDialog(onAdd: (android.net.Uri, Float) -> Unit, close: () -> Unit) {
+    var uri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var level by remember { mutableFloatStateOf(0.15f) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri = it }
+    AlertDialog(
+        onDismissRequest = close,
+        containerColor = Color(0xFF14120F),
+        title = { Text("מוזיקת רקע", color = C.Gold, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("בוחרים שיר או ביט מהטלפון. הוא יתנגן חלש מתחת לקריינות, יחזור על עצמו אם הוא קצר, ויתחיל ויסתיים בעדינות. " +
+                    "ההקלטה המקורית נשארת, ונוצרת הקלטה חדשה.", color = C.Sub, fontSize = 13.sp, lineHeight = 19.sp)
+                SoftButton(if (uri == null) "בחירת קובץ מוזיקה" else "✓ נבחר קובץ (לחצו להחלפה)", Modifier.fillMaxWidth(), icon = Icons.Rounded.MusicNote) {
+                    pick.launch(arrayOf("audio/*"))
+                }
+                LabeledSlider("עוצמת המוזיקה", "${(level * 100).toInt()}%", level, 0.05f..0.4f) { level = it }
+            }
+        },
+        confirmButton = { SoftButton("הוספה", icon = Icons.Rounded.Check, color = C.Gold, enabled = uri != null) { onAdd(uri!!, level) } },
+        dismissButton = { SoftButton("ביטול", onClick = close) },
+    )
 }
 
 /** "דיווח על תוכן": the text and voice of a narration, sent by mail (or any app) to the app's makers. */

@@ -136,5 +136,13 @@ class KarianootApp : Application() {
         }
     }
 
+    /** Background music under [c]; [done] gets the new recording (null on failure). */
+    fun addMusic(c: Creation, music: android.net.Uri, level: Float, done: (Creation?) -> Unit) {
+        scope.launch {
+            val r = runCatching { speech.addMusic(c, music, level) }.getOrNull()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(r) }
+        }
+    }
+
     fun clearResult() { if (!_job.value.busy) _job.value = JobState() }
 }

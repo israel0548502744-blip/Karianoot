@@ -305,6 +305,19 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         index.writeText(a.toString())
     }
 
+    /** A copy of [c] with [music] (any audio file) underneath at [level]; saved as a new recording at the top of the list. */
+    suspend fun addMusic(c: Creation, music: android.net.Uri, level: Float): Creation = withContext(Dispatchers.Default) {
+        val (voice, rate) = Wav.read(c.file)
+        val m = AudioDecoder.decode(ctx, music, maxSeconds = 90)   // loops if the narration is longer
+        val mixed = com.karianoot.engine.Mixer.mix(voice, rate, m, 44100, level)
+        val f = File(creationsDir, c.file.nameWithoutExtension + "_music_${System.currentTimeMillis() % 100000}.wav")
+        Wav.write(f, mixed, rate)
+        val out = c.copy(file = f, voice = c.voice + " · עם מוזיקה", seconds = mixed.size.toFloat() / rate, createdAt = System.currentTimeMillis(),
+            genSeconds = 0f, parts = emptyList(), voiceId = "")   // a mixed copy is not re-made sentence by sentence
+        save(listOf(out) + history())
+        out
+    }
+
     /** Copies a creation into the phone's Music/Karianoot folder, where other apps can find it. */
     fun exportToMusic(c: Creation): Boolean = runCatching {
         val values = ContentValues().apply {
