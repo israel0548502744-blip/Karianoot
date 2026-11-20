@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Backup
 import com.karianoot.app.Updates
@@ -731,6 +732,8 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
                 Toast.makeText(ctx, if (speech.exportToMusic(c)) "נשמר בתיקייה Music/Karianoot" else "השמירה נכשלה", Toast.LENGTH_SHORT).show()
             }
             Spacer(Modifier.weight(1f))
+            // Google Play asks apps that make AI content to let users report it.
+            CircleIcon(Icons.Rounded.Flag, "דיווח על תוכן", tint = C.Sub) { reportContent(ctx, c.text, c.voice) }
             CircleIcon(Icons.Rounded.Delete, "מחק", tint = C.Red, onClick = onDelete)
         }
         if (c.parts.size > 1 && c.voiceId.isNotEmpty())
@@ -840,6 +843,15 @@ private fun MyVoices(app: KarianootApp) {
         }
         SoftButton("מחק", icon = Icons.Rounded.Delete, color = C.Red) { app.voices.delete(v) }
     }
+}
+
+/** "דיווח על תוכן": the text and voice of a narration, sent by mail (or any app) to the app's makers. */
+private fun reportContent(ctx: android.content.Context, text: String, voice: String) {
+    val body = "דיווח על קריינות שנוצרה באפליקציה\nקול: $voice\nהטקסט:\n$text\n\nמה לא בסדר?\n"
+    val mail = com.karianoot.app.BuildConfig.SUPPORT_EMAIL
+    val i = if (mail.isNotEmpty()) Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:$mail")) else Intent(Intent.ACTION_SEND).setType("text/plain")
+    i.putExtra(Intent.EXTRA_SUBJECT, "קריינות – דיווח על תוכן").putExtra(Intent.EXTRA_TEXT, body)
+    runCatching { ctx.startActivity(Intent.createChooser(i, "דיווח על תוכן")) }
 }
 
 /** Backup to one file (to keep, or to move to a new phone) and restore from it; the app restarts after a restore. */

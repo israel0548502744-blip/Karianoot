@@ -30,12 +30,39 @@ android {
         }
     }
 
+    // "personal": the owner's own build (GitHub releases, includes the personal-only voice "נמר").
+    // "store": the Google Play build (no personal-only voices; its own package name; signed with the Play upload key).
+    flavorDimensions += "channel"
+    productFlavors {
+        create("personal") {
+            dimension = "channel"
+            // The fixed key, so each new APK installs over the old one and keeps the downloaded models.
+            signingConfig = signingConfigs.getByName("release")
+            buildConfigField("boolean", "STORE", "false")
+        }
+        create("store") {
+            dimension = "channel"
+            applicationId = "com.karianoot.narration"
+            buildConfigField("boolean", "STORE", "true")
+            // The upload key comes from CI secrets only (never in git); without them the bundle is left unsigned.
+            System.getenv("KARIANOOT_UPLOAD_KEYSTORE")?.takeIf { it.isNotEmpty() }?.let { path ->
+                signingConfig = signingConfigs.create("upload") {
+                    storeFile = file(path)
+                    storePassword = System.getenv("KARIANOOT_UPLOAD_STORE_PASSWORD")
+                    keyAlias = System.getenv("KARIANOOT_UPLOAD_KEY_ALIAS")
+                    keyPassword = System.getenv("KARIANOOT_UPLOAD_KEY_PASSWORD")
+                }
+            }
+        }
+    }
+    // Where "דיווח על תוכן" sends reports (set in CI; empty = the user picks an app to send with).
+    defaultConfig { buildConfigField("String", "SUPPORT_EMAIL", "\"${System.getenv("KARIANOOT_SUPPORT_EMAIL") ?: ""}\"") }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 

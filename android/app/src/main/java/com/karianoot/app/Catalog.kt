@@ -165,7 +165,10 @@ object Catalog {
     private fun m(speaker: Int, name: String, note: String, female: Boolean) =
         VoiceInfo("m_$speaker", "magpie_he", "", name, note, female, speaker = speaker, needs = listOf("g2p", "magpie_he"))
 
-    val voices = listOf(
+    /** The store build leaves out personal-only voices (their files are only in src/personal). */
+    val voices = allVoices.filter { !BuildConfig.STORE || !it.personalOnly }
+
+    private val allVoices get() = listOf(
         // Magpie, named as on the picker page; the user's favourite (female5) first, then the two they loved.
         m(10, "אישה 5", "מומלץ", female = true),
         m(19, "קול 3", "", female = false),     // F0 ~140 Hz, formants with the male voices

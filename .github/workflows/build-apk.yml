@@ -33,13 +33,21 @@ jobs:
         run: android/magpie/build_android.sh "${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
       - name: Build APK
         run: |
-          gradle -p android :app:assembleRelease --no-daemon
-          cp android/app/build/outputs/apk/release/app-release.apk Karianoot.apk
-          ls -la Karianoot.apk
+          # personal = the owner's APK (GitHub releases); store = the Google Play bundle (no personal-only voices).
+          gradle -p android :app:assemblePersonalRelease :app:bundleStoreRelease --no-daemon
+          cp android/app/build/outputs/apk/personal/release/app-personal-release.apk Karianoot.apk
+          cp android/app/build/outputs/bundle/storeRelease/app-store-release.aab Karianoot-store.aab
+          ls -la Karianoot.apk Karianoot-store.aab
+          # The store bundle must not carry the personal-only voice.
+          ! unzip -l Karianoot-store.aab | grep -q "namer"
       - uses: actions/upload-artifact@v4
         with:
           name: Karianoot-apk
           path: Karianoot.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Karianoot-store-aab
+          path: Karianoot-store.aab
       - name: Publish as the latest release
         env:
           GH_TOKEN: ${{ github.token }}
