@@ -174,7 +174,12 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - ZONOS3-Mini (Zyphra, Apache-2.0, Nov 2026; Hebrew officially supported, plain text in, cloning, emotion/pace steering):
   `zonos3-probe.yml`. zonos3.cpp (servers/ggml, repo @a50e141) builds on CI (needs ffmpeg for --clone). backbone-ptq.gguf
   0.66 GB + zac-keep2 + spk-encoder. Cloned from Magpie clips: CER 0-2.2% on the passage (Magpie 0.9%), generation RTF ~0.1 on
-  4 CI cores (whole CLI call incl. load ~1.5x). Picker round r17_zonos3. Next: arm64 build (Rust text normalizer) -> JNI.
+  4 CI cores (whole CLI call incl. load ~1.5x). Picker round r17_zonos3.
+  arm64 build works (zonos3-probe.yml job "android"): their CMake builds the Rust text normalizer for the host, so patch
+  `--crate-type staticlib` -> `... --target aarch64-linux-android` and `${TEXTNORM_TARGET_DIR}/release` ->
+  `.../aarch64-linux-android/release`; NDK clang as CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER. No C API: a JNI bridge would
+  follow servers/ggml/src/main.cpp (zonos3_model_load, zonos3_build_prompt, zonos3_generate, zac decode, spk-encoder).
+  Code: MIT (servers), weights Apache-2.0. Waiting for the user's ear (r17) before building it in.
 
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
