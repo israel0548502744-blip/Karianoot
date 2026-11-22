@@ -13,12 +13,13 @@ permissions:
 jobs:
   card:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -q huggingface_hub
+      - uses: actions/checkout@v4
       - name: Card, files, license
         run: |
           python - <<'PY' | tee card.txt
@@ -57,9 +58,72 @@ jobs:
           cmake --build build -j 4 2>&1 | tail -15
           find build -maxdepth 3 -type f -perm -u+x | head -20 | tee -a ../../../card.txt
           for b in $(find build -maxdepth 3 -type f -perm -u+x -name "*cli*" -o -maxdepth 3 -type f -perm -u+x -name "zonos*"); do echo "=== $b --help"; $b --help 2>&1 | head -60; done | tee -a ../../../card.txt
+      - name: Hebrew samples (cloned from Magpie voices), timed and scored
+        continue-on-error: true
+        run: |
+          CLI=z3/servers/ggml/build/zonos3-cli
+          $CLI --help > cli_help.txt 2>&1 || true; grep -n -i "lang\|normal\|threads\|--max\|laci" cli_help.txt | head -20 | tee -a card.txt
+          LANG=""; grep -q -- "--language" cli_help.txt && LANG="--language he"
+          TH=""; grep -q -- "--threads" cli_help.txt && TH="--threads 4"
+          hf download Zyphra/ZONOS3-Mini gguf/backbone-ptq.gguf gguf/zac-keep2.gguf gguf/spk-encoder.gguf --local-dir zm > /dev/null
+          ls -la zm/gguf
+          curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz
+          python3 - <<'PY'
+          import json
+          p = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          open("texts.json", "w").write(json.dumps([x["text"] for x in p] + [
+              "הערב ארסנל נגד באיירן מינכן, ומבאפה עם ריאל מול ברצלונה. אני הולך על תיקו ביחס שלוש ארבעים."], ensure_ascii=False))
+          PY
+          mkdir -p zout
+          python3 - "$CLI" "$LANG" "$TH" <<'PY'
+          import json, subprocess, sys, time, os
+          cli, lang, th = sys.argv[1], sys.argv[2].split(), sys.argv[3].split()
+          texts = json.load(open("texts.json", encoding="utf-8")); res = []
+          for spk in (10, 13, 19):
+              ref = f"wavs/q8_0/spk{spk}_0.wav"
+              for i, t in enumerate(texts):
+                  out = f"zout/z_spk{spk}_{i}.wav"
+                  t0 = time.time()
+                  r = subprocess.run([cli, "zm/gguf/backbone-ptq.gguf", "--tts", t, out, "--clone", ref, "--seed", str(7 + i), *lang, *th],
+                                     capture_output=True, text=True)
+                  dt = time.time() - t0
+                  print(spk, i, r.returncode, round(dt, 1), (r.stdout + r.stderr)[-300:].replace("\n", " | "), flush=True)
+                  res.append({"spk": spk, "i": i, "text": t, "work_s": round(dt, 1), "ok": os.path.exists(out)})
+          json.dump(res, open("zout/runs.json", "w"), ensure_ascii=False, indent=1)
+          PY
+      - name: Listen
+        continue-on-error: true
+        run: |
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          pip install -q faster-whisper soundfile scipy numpy
+          python3 - <<'PY' | tee -a card.txt
+          import json, unicodedata, numpy as np, soundfile as sf
+          from scipy.signal import resample_poly
+          from faster_whisper import WhisperModel
+          asr = WhisperModel("asr", device="cpu", compute_type="int8")
+          norm = lambda s: "".join(c for c in unicodedata.normalize("NFD", s) if "א" <= c <= "ת")
+          def cer(r, h):
+              r, h = norm(r), norm(h); d = list(range(len(h) + 1))
+              for i in range(1, len(r) + 1):
+                  prev, d[0] = d[0], i
+                  for j in range(1, len(h) + 1):
+                      cur = min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1])); prev, d[j] = d[j], cur
+              return d[len(h)] / max(1, len(r))
+          runs = json.load(open("zout/runs.json", encoding="utf-8"))
+          for x in runs:
+              if not x["ok"]: print("FAILED", x); continue
+              a, sr = sf.read(f"zout/z_spk{x['spk']}_{x['i']}.wav", dtype="float32")
+              if a.ndim > 1: a = a.mean(1)
+              hyp = " ".join(s.text for s in asr.transcribe(resample_poly(a, 16000, sr).astype(np.float32), language="he", beam_size=5)[0])
+              x.update(seconds=round(len(a) / sr, 1), cer=round(cer(x["text"], hyp), 3), heard=hyp)
+              x["work_per_audio"] = round(x["work_s"] / max(x["seconds"], 0.1), 2)
+              print(f"spk{x['spk']} [{x['i']}] cer={x['cer']} {x['seconds']}s audio, x{x['work_per_audio']} | {hyp}")
+          json.dump(runs, open("zout/runs.json", "w"), ensure_ascii=False, indent=1)
+          PY
+          tar czf zonos3_samples.tgz zout
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete zonos3-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
-          gh release create zonos3-probe card.txt -R "$GITHUB_REPOSITORY" --prerelease --title "ZONOS3-Mini probe" --notes "Model card and files. Not the app." || true
+          gh release create zonos3-probe card.txt $(ls zonos3_samples.tgz 2>/dev/null) -R "$GITHUB_REPOSITORY" --prerelease --title "ZONOS3-Mini probe" --notes "Model card and files. Not the app." || true
