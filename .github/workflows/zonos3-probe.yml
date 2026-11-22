@@ -150,7 +150,10 @@ jobs:
       - name: Cross-compile the CLI (arm64-v8a)
         run: |
           cd z3/servers/ggml
-          grep -n -i "cargo\|rust" CMakeLists.txt | head -20
+          # Their CMake builds the Rust text normalizer for the host; for the phone it must be built for aarch64-linux-android.
+          sed -i 's|--crate-type staticlib|--crate-type staticlib --target aarch64-linux-android|' CMakeLists.txt
+          sed -i 's|${TEXTNORM_TARGET_DIR}/release|${TEXTNORM_TARGET_DIR}/aarch64-linux-android/release|g' CMakeLists.txt
+          sed -n 200,250p CMakeLists.txt
           cmake -S . -B build-android -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-31 -DCMAKE_BUILD_TYPE=Release -DGGML_OPENMP=OFF -DGGML_NATIVE=OFF \
             -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16+i8mm -DRust_CARGO_TARGET=aarch64-linux-android 2>&1 | tail -25
