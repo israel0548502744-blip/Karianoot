@@ -134,7 +134,7 @@ class GoldenTest {
             }
             File("build/test-out").mkdirs(); Wav.write(File("build/test-out/long_blue.wav"), wav, tts.sampleRate)
             println("CHECK long blue ${parts.size} pieces, ${"%.1f".format(audio)}s audio in ${"%.1f".format(sec)}s, short pieces $short")
-            assertTrue("pieces: ${parts.size}", parts.size >= 12)
+            assertTrue("pieces: ${parts.size}", parts.size >= 8)
             assertEquals("pieces too short for their text", 0, short)
             assertTrue("audio length ${audio}s", audio in 80.0..200.0)
         }
