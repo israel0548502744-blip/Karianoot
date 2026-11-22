@@ -61,6 +61,7 @@ jobs:
       - name: Hebrew samples (cloned from Magpie voices), timed and scored
         continue-on-error: true
         run: |
+          sudo apt-get install -y -q ffmpeg > /dev/null
           CLI=z3/servers/ggml/build/zonos3-cli
           $CLI --help > cli_help.txt 2>&1 || true; grep -n -i "lang\|normal\|threads\|--max\|laci" cli_help.txt | head -20 | tee -a card.txt
           LANG=""; grep -q -- "--language" cli_help.txt && LANG="--language he"
