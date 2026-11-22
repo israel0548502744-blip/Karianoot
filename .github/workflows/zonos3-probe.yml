@@ -45,6 +45,18 @@ jobs:
           git clone -q --depth 1 https://github.com/Zyphra/ZONOS3-Mini z3 && git -C z3 log -1 --format='%H %cd' | tee -a card.txt
           (cd z3 && find . -maxdepth 3 -not -path './.git*' | sort | head -120) | tee -a card.txt
           for f in z3/README.md z3/cpp/README.md z3/ggml/README.md z3/native/README.md z3/LICENSE; do [ -f $f ] && { echo "=== $f"; head -c 9000 $f; } ; done | tee -a card.txt
+      - name: ggml runtime notes
+        run: |
+          for f in z3/servers/ggml/README.md z3/docs/api.md; do [ -f $f ] && { echo "=== $f"; head -c 14000 $f; } ; done | tee -a card.txt
+          ls z3/servers/ggml | tee -a card.txt
+      - name: Build the ggml CLI
+        continue-on-error: true
+        run: |
+          cd z3 && git submodule update --init --recursive --depth 1 -q || true
+          cd servers/ggml && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > ../../../build_cfg.txt 2>&1; tail -20 ../../../build_cfg.txt
+          cmake --build build -j 4 2>&1 | tail -15
+          find build -maxdepth 3 -type f -perm -u+x | head -20 | tee -a ../../../card.txt
+          for b in $(find build -maxdepth 3 -type f -perm -u+x -name "*cli*" -o -maxdepth 3 -type f -perm -u+x -name "zonos*"); do echo "=== $b --help"; $b --help 2>&1 | head -60; done | tee -a ../../../card.txt
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
