@@ -164,6 +164,18 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 - Golden test broke on Nov 20 because upstream BlueTTS (Python reference) switched to an int8 vector estimator on Nov 19:
   reference.yml now pins BlueTTS@acc04f0 and RenikudPlus@93a82fa.
 
+## Nov 22 2026
+- Numbers in tips (`SurveyTest` prints how lines of KARIANOOT_SURVEY are read): "שערים" was read as ש+"ערים" (f.) -> "שתי
+  שערים" (also in the Python library; HebrewNumbersTest skips those golden cases on purpose); football nouns added to NOUN_GENDER;
+  "1 נקודה" -> "נקודה אחת"; TextPrep: "1.5-2.5" -> "עד", "N+" -> "N ויותר", seasons "2025/26" -> two years, "x3" -> "פי 3"
+  (x2 stays double chance), odds "10.00" -> "10", one decimal after "יחס" = two digits ("1.3" -> "1.30").
+- Long script (`long_script.txt`, 1,800 chars): Blue 10 pieces 82 s, none short; Magpie 10 pieces 86 s, 0 broken, work/audio 2.4.
+- Proofreader for Qwen: `proofread-qwen.yml` (on demand; d_commentator + d_veteran prints, greedy).
+- ZONOS3-Mini (Zyphra, Apache-2.0, Nov 2026; Hebrew officially supported, plain text in, cloning, emotion/pace steering):
+  `zonos3-probe.yml`. zonos3.cpp (servers/ggml, repo @a50e141) builds on CI (needs ffmpeg for --clone). backbone-ptq.gguf
+  0.66 GB + zac-keep2 + spk-encoder. Cloned from Magpie clips: CER 0-2.2% on the passage (Magpie 0.9%), generation RTF ~0.1 on
+  4 CI cores (whole CLI call incl. load ~1.5x). Picker round r17_zonos3. Next: arm64 build (Rust text normalizer) -> JNI.
+
 ## Plan
 1. Blue V3 + Blue 2.5 + RenikudPlus (done in v1).
 2. Hebrew number/date normalization (done: HebrewNumbers.kt).
