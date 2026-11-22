@@ -1,0 +1,48 @@
+name: ZONOS3-Mini probe
+
+# Zyphra/ZONOS3-Mini (Apache-2.0, tagged Hebrew): model card, files and license, then (if it installs) Hebrew samples
+# of the test passage scored by the recognizer.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/zonos3-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  card:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q huggingface_hub
+      - name: Card, files, license
+        run: |
+          python - <<'PY' | tee card.txt
+          from huggingface_hub import HfApi, hf_hub_download
+          api = HfApi()
+          for r in ["Zyphra/ZONOS3-Mini", "qualcomm/NeuTTS-2E"]:
+              try:
+                  i = api.model_info(r, files_metadata=True)
+              except Exception as e:
+                  print("##", r, "ERROR", e); continue
+              print("##", r, "sha", i.sha, "license", (i.card_data or {}).get("license") if i.card_data else None,
+                    "languages", (i.card_data or {}).get("language") if i.card_data else None)
+              for s in i.siblings: print(f"  {s.size or 0:>12}  {s.rfilename}")
+              try:
+                  print(open(hf_hub_download(r, "README.md", revision=i.sha), encoding="utf-8").read()[:12000])
+              except Exception as e:
+                  print("no readme", e)
+              for lic in ("LICENSE", "LICENSE.md", "LICENSE.txt"):
+                  try: print("---", lic, "---\n", open(hf_hub_download(r, lic, revision=i.sha), encoding="utf-8").read()[:3000])
+                  except Exception: pass
+          PY
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete zonos3-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create zonos3-probe card.txt -R "$GITHUB_REPOSITORY" --prerelease --title "ZONOS3-Mini probe" --notes "Model card and files. Not the app." || true
