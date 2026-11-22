@@ -94,6 +94,12 @@ jobs:
           curl -sSL -o up/license-nvidia_magpie_tts_multilingual_357m-README.md \
             "https://huggingface.co/nvidia/magpie_tts_multilingual_357m/resolve/main/README.md" || true
           ls -la up/license-* 
+      - name: Blue 2.5 int8 graphs (dtsj89/puki-syrinx, MIT), ready if the user picks them (picker r16)
+        run: |
+          R=4e9ec197665804435bac30452a9e52e101405886
+          for f in vector_estimator.onnx vocoder.onnx LICENSE-BlueTTS README.md; do
+            curl -sSL -o "up/blue_25_int8-$f" "https://huggingface.co/dtsj89/puki-syrinx/resolve/$R/$f"; done
+          ls -la up/blue_25_int8-*; sha256sum up/blue_25_int8-*.onnx
       - name: Magpie notice in the exact words the NVIDIA Open Model License asks for
         run: |
           printf '%s\n\n%s\n' "Licensed by NVIDIA Corporation under the NVIDIA Open Model License" \
