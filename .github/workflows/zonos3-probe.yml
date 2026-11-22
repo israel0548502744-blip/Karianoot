@@ -40,6 +40,11 @@ jobs:
                   try: print("---", lic, "---\n", open(hf_hub_download(r, lic, revision=i.sha), encoding="utf-8").read()[:3000])
                   except Exception: pass
           PY
+      - name: The runtimes (GitHub repo)
+        run: |
+          git clone -q --depth 1 https://github.com/Zyphra/ZONOS3-Mini z3 && git -C z3 log -1 --format='%H %cd' | tee -a card.txt
+          (cd z3 && find . -maxdepth 3 -not -path './.git*' | sort | head -120) | tee -a card.txt
+          for f in z3/README.md z3/cpp/README.md z3/ggml/README.md z3/native/README.md z3/LICENSE; do [ -f $f ] && { echo "=== $f"; head -c 9000 $f; } ; done | tee -a card.txt
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
