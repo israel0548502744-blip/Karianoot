@@ -42,6 +42,28 @@ class MagpieTest {
         }
     }
 
+    /** The 1,800-character tips script through the app's Magpie path: every piece passes the take check after retakes. */
+    @Test fun longScriptMagpie() {
+        assumeTrue(ready() && File(dir, "renikud/model_int8.onnx").exists())
+        val g2p = HebrewG2P(File(dir, "renikud/model_int8.onnx").path)
+        MagpieTts(gguf(), g2p, 4).use { m ->
+            val text = TextPrep.apply(javaClass.getResource("/long_script.txt")!!.readText())
+            val t0 = System.nanoTime()
+            val parts = m.synthesizeParts(text, 10, seed = 5)
+            val sec = (System.nanoTime() - t0) / 1e9
+            var broken = 0
+            for (p in parts) if (TakeCheck.measure(p.samples, m.sampleRate, m.ipa(p.text).length, TakeCheck.MAGPIE).broken) broken++
+            val j = Joiner.join(parts.map { it.samples }, parts.map { it.text }, m.sampleRate, 0f, MagpieTts.NATURAL_PAUSE, floor = MagpieTts.MIN_PAUSE)
+            Wav.write(File(dir, "long_magpie.wav"), j.samples, m.sampleRate)
+            val audio = j.samples.size.toDouble() / m.sampleRate
+            val rt = Runtime.getRuntime()
+            println("CHECK long magpie ${parts.size} pieces, ${"%.1f".format(audio)}s audio in ${"%.1f".format(sec)}s, broken $broken, " +
+                "jvm heap ${(rt.totalMemory() - rt.freeMemory()) / 1_000_000} MB")
+            assertEquals("broken pieces after retakes", 0, broken)
+            assertTrue("audio length ${audio}s", audio in 80.0..220.0)
+        }
+    }
+
     /** The app's whole path: TextPrep, pieces, lexicon + G2P, Magpie (app settings, speaker 10) with retakes, Joiner. */
     @Test fun appPipelineIsCleanAndCancelWorks() {
         assumeTrue(ready() && File(dir, "renikud/model_int8.onnx").exists())

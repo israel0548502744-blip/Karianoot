@@ -113,6 +113,33 @@ class GoldenTest {
         }
     }
 
+    /** A 1,800-character tips script (Blue 2.5, the app's text path): every piece spoken, none stalled or cut short. */
+    @Test fun longScriptBlue() {
+        need()
+        val g2p = HebrewG2P(File(models, "renikud/model_int8.onnx").path)
+        val text = TextPrep.apply(javaClass.getResource("/long_script.txt")!!.readText())
+        BlueTts(File(models, "blue_25"), g2p).use { tts ->
+            val voice = BlueVoice.load(File(models, "blue_25/voices/female.json"))
+            val opt = BlueTts.Options(steps = 10)
+            val t0 = System.nanoTime()
+            val parts = tts.synthesizeParts(text, voice, opt, BlueTts.gaussian(9L))
+            val wav = tts.join(parts, opt)
+            val sec = (System.nanoTime() - t0) / 1e9; val audio = wav.size.toDouble() / tts.sampleRate
+            var short = 0
+            for (p in parts) {
+                // About 11-30 IPA characters per second of speech is normal; far below means words were dropped.
+                val ipaLen = BlueTts.toIpa(g2p, p.text).length
+                val rate = ipaLen / (p.samples.size.toDouble() / tts.sampleRate)
+                if (rate > 40 || p.samples.size < tts.sampleRate / 4) short++
+            }
+            File("build/test-out").mkdirs(); Wav.write(File("build/test-out/long_blue.wav"), wav, tts.sampleRate)
+            println("CHECK long blue ${parts.size} pieces, ${"%.1f".format(audio)}s audio in ${"%.1f".format(sec)}s, short pieces $short")
+            assertTrue("pieces: ${parts.size}", parts.size >= 12)
+            assertEquals("pieces too short for their text", 0, short)
+            assertTrue("audio length ${audio}s", audio in 80.0..200.0)
+        }
+    }
+
     @Test fun fullPipelineWritesWav() {
         need()
         val g2p = HebrewG2P(File(models, "renikud/model_int8.onnx").path)
