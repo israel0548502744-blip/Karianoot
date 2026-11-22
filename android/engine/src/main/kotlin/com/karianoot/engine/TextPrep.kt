@@ -41,6 +41,20 @@ object TextPrep {
         // Plus: added time "90+3" and a plus handicap "+1.5".
         t = Regex("(\\d)\\s*\\+\\s*(?=\\d)").replace(t) { "${it.groupValues[1]} פלוס " }
         t = Regex("(?<=^|[\\s(])\\+(?=\\d)").replace(t, "פלוס ")
+        // A range of lines "1.5-2.5" -> "1.5 עד 2.5" (the number reader could not split it).
+        t = Regex("(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*[-–]\\s*(\\d+\\.\\d+)(?![\\d.])").replace(t) { "${it.groupValues[1]} עד ${it.groupValues[2]}" }
+        // "2+" / "3.5+" (and more): "ויותר" ("ומעלה" would make the number feminine, as in degrees).
+        t = Regex("(\\d+(?:\\.\\d+)?)\\+(?!\\d)").replace(t) { "${it.groupValues[1]} ויותר" }
+        // A season "2025/26", "2025-26", "2024/2025": two years said one after the other.
+        t = Regex("(?<!\\d)(20\\d\\d)\\s*[/-]\\s*(\\d\\d|20\\d\\d)(?!\\d)").replace(t) { m ->
+            val b = m.groupValues[2].let { if (it.length == 2) "20$it" else it }
+            "${m.groupValues[1]} $b"
+        }
+        // "x3", "x10" (times, in a parlay): "פי". "x2" stays the double chance (above).
+        t = Regex("(?<![A-Za-z\\d])[xX×]([3-9]|\\d\\d+)(?![\\d.])").replace(t) { "פי ${it.groupValues[1]}" }
+        // Odds: "10.00" -> "10"; one decimal after "יחס" means tenths of the two-digit odds ("1.3" = "אחד שלושים").
+        t = Regex("(?<![\\d.])(\\d+)\\.00(?![\\d.])").replace(t) { it.groupValues[1] }
+        if ("יחס" in t) t = Regex("(?<![\\d.])(\\d{1,2})\\.([1-46-9])(?![\\d.%])").replace(t) { "${it.groupValues[1]}.${it.groupValues[2]}0" }
         // Odds like 1.05 / 2.08: a zero after the point is said ("אחד אפס חמש").
         // A Hebrew prefix ("ו-1.05", "ב1.05") joins the first word.
         t = Regex("(?<![\\d.$HEB])(?:([ובלמהכש])-?)?(\\d{1,2})\\.0(\\d)(?![\\d.])").replace(t) { m ->

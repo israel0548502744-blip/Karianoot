@@ -32,7 +32,7 @@ class TextPrepTest {
 
     @Test fun oddsMoneyAndPlus() {
         assertEquals("ביחס אחד אפס חמש", TextPrep.apply("ביחס 1.05"))
-        assertEquals("יחס שתיים אפס שמונה, לא 2.8", TextPrep.apply("יחס 2.08, לא 2.8"))
+        assertEquals("יחס שתיים אפס שמונה, לא 2.80", TextPrep.apply("יחס 2.08, לא 2.8"))
         assertEquals("ביחס 1.85", TextPrep.apply("ביחס 1.85"))
         assertEquals("1.5 ואחד אפס חמש", TextPrep.apply("1.5 ו-1.05"))
         assertEquals("שימו 100 שקל ותקבלו 850 שקל", TextPrep.apply("שימו 100 ש\"ח ותקבלו 850 ש״ח"))
@@ -42,5 +42,18 @@ class TextPrepTest {
         assertEquals("הנדיקפ פלוס 1.5", TextPrep.apply("הנדיקפ +1.5"))
         assertEquals("אני הולך על איקס.", TextPrep.apply("אני הולך על X."))
         assertEquals("אחת איקס שתיים, ו-איקס", TextPrep.apply("1 X 2, ו-X"))
+    }
+
+    @Test fun rangesSeasonsAndOdds() {
+        assertEquals("1.5 עד 2.5", TextPrep.apply("1.5-2.5"))
+        assertEquals("שערים 2 ויותר", TextPrep.apply("שערים 2+"))
+        assertEquals("עונת 2025 2026", TextPrep.apply("עונת 2025/26"))
+        assertEquals("עונת 2024 2025", TextPrep.apply("עונת 2024-2025"))
+        assertEquals("טופס פי 3", TextPrep.apply("טופס x3"))
+        assertEquals("יחס של 10", TextPrep.apply("יחס של 10.00"))
+        assertEquals("יחס 1.30 ו-1.40", TextPrep.apply("יחס 1.3 ו-1.4"))
+        assertEquals("יחס 1.5", TextPrep.apply("יחס 1.5"))
+        assertEquals("ניצחון 3-1", TextPrep.apply("ניצחון 3-1"))
+        assertEquals("בדקה 90 פלוס 3", TextPrep.apply("בדקה 90+3"))
     }
 }

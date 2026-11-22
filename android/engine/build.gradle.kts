@@ -29,6 +29,7 @@ tasks.test {
     environment("KARIANOOT_STRETCH", System.getenv("KARIANOOT_STRETCH") ?: "")
     environment("KARIANOOT_JOIN", System.getenv("KARIANOOT_JOIN") ?: "")
     environment("KARIANOOT_TAKES", System.getenv("KARIANOOT_TAKES") ?: "")
+    environment("KARIANOOT_SURVEY", System.getenv("KARIANOOT_SURVEY") ?: "")
     (project.findProperty("karianoot.qwenjni") as String?)?.let { systemProperty("karianoot.qwenjni", it) }
     (project.findProperty("karianoot.magpiejni") as String?)?.let { systemProperty("karianoot.magpiejni", it) }
     testLogging { events("passed", "failed", "standard_out", "standard_error"); showStandardStreams = true }
