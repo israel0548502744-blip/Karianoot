@@ -128,3 +128,31 @@ jobs:
         run: |
           gh release delete zonos3-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
           gh release create zonos3-probe card.txt $(ls zonos3_samples.tgz 2>/dev/null) -R "$GITHUB_REPOSITORY" --prerelease --title "ZONOS3-Mini probe" --notes "Model card and files. Not the app." || true
+
+  android:
+    # Can zonos3.cpp be built for the phone (arm64, NDK)? Its text normalizer is Rust (cargo), so the Rust Android target too.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - name: Sources
+        run: |
+          git clone -q https://github.com/Zyphra/ZONOS3-Mini z3 && git -C z3 checkout -q a50e14117d99181ba7f28047b451ba03ba1a09a9
+          cd z3 && git submodule update --init --recursive --depth 1 -q || true
+      - name: Rust for Android
+        run: |
+          rustup target add aarch64-linux-android
+          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"; echo "NDK=$NDK" >> $GITHUB_ENV
+          T=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$T/aarch64-linux-android31-clang" >> $GITHUB_ENV
+          echo "CC_aarch64_linux_android=$T/aarch64-linux-android31-clang" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$T/llvm-ar" >> $GITHUB_ENV
+      - name: Cross-compile the CLI (arm64-v8a)
+        run: |
+          cd z3/servers/ggml
+          grep -n -i "cargo\|rust" CMakeLists.txt | head -20
+          cmake -S . -B build-android -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-31 -DCMAKE_BUILD_TYPE=Release -DGGML_OPENMP=OFF -DGGML_NATIVE=OFF \
+            -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16+i8mm -DRust_CARGO_TARGET=aarch64-linux-android 2>&1 | tail -25
+          cmake --build build-android --target zonos3-cli -j 4 2>&1 | tail -25
+          file build-android/zonos3-cli && ls -la build-android/zonos3-cli
