@@ -58,7 +58,14 @@ for k, p in enumerate(mine):
     row["takes"] = {}
     for spk in speakers:
         wav = os.path.join(made or out, f"s{p['sentence']}_{p['piece']}_spk{spk}.wav")
-        r = subprocess.CompletedProcess([], 0, "", "") if made else subprocess.run([cli, "say", "--model", gguf, "--text", p["ipa"], "--lang", "he", "--speaker", str(spk),
+        qcli = os.environ.get("QWEN_CLI")
+        if qcli and not made:   # Qwen: speaker = an app voice print (assets/qwen/q_<name>.spk), greedy like the app
+            q = os.environ["QWEN_DIR"]
+            r = subprocess.run([qcli, "--model", f"{q}/qwen-talker-1.7b-base-Q4_K_M.gguf", "--codec", f"{q}/qwen-tokenizer-12hz-Q4_K_M.gguf",
+                                "--ref-spk", f"android/app/src/main/assets/qwen/q_{spk}.spk", "--lang", "auto", "--greedy", "--seed", "1",
+                                "-o", wav], input=p.get("qipa", p["ipa"]), capture_output=True, text=True)
+        else:
+          r = subprocess.CompletedProcess([], 0, "", "") if made else subprocess.run([cli, "say", "--model", gguf, "--text", p["ipa"], "--lang", "he", "--speaker", str(spk),
                             "--seed", str(p.get("seed", 1000 + p["sentence"])), "--threads", str(os.cpu_count() or 4), "--output", wav],
                            capture_output=True, text=True, env=dict(os.environ, MAGPIE_PRIOR="0"))
         if r.returncode != 0 or not os.path.exists(wav):

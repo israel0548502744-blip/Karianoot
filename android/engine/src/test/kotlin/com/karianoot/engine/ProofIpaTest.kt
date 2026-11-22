@@ -23,7 +23,7 @@ class ProofIpaTest {
                     val ipa = MagpieTts.clean(BlueTts.toIpa(g2p, piece))
                     out.println(JSONObject().put("sentence", s).put("piece", p).put("source", line).put("text", piece)
                         .put("spoken", HebrewNumbers.normalize(piece))
-                        .put("ipa", ipa).toString())
+                        .put("ipa", ipa).put("qipa", BlueTts.toIpa(g2p, piece)).toString())
                     n++
                 }
             }

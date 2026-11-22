@@ -1,0 +1,100 @@
+name: Automatic proofreader (Qwen)
+
+# The proofreader's 485 sentences through Qwen (the app's voice prints q_d_commentator and q_d_veteran, greedy like the app)
+# and the recognizer; words both voices missed. Slow (Qwen ~3x real time on CI), so it runs on demand.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/proofread-qwen.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  ipa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Text -> IPA (the app's own path)
+        run: |
+          mkdir -p proof/renikud && cp tools/proof/sentences.txt proof/
+          pip install -q huggingface_hub
+          hf download notmax123/RenikudPlus model_int8.onnx --revision 679c56ca449d41873fb8ff7711ddf7563d28198f --local-dir proof/renikud
+          KARIANOOT_PROOF=$PWD/proof gradle -p android :engine:test --tests 'com.karianoot.engine.ProofIpaTest' --no-daemon -q 2>&1 | grep -E "CHECK|FAIL|Exception" || true
+          wc -l proof/pieces.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pieces
+          path: proof/pieces.jsonl
+
+  speak:
+    needs: ipa
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: pieces
+      - name: qwentts.cpp (host)
+        run: |
+          command -v ninja > /dev/null || pipx install ninja > /dev/null
+          mkdir -p android/qwen/build && cd android/qwen/build
+          git clone -q https://github.com/ServeurpersoCom/qwentts.cpp && cd qwentts.cpp
+          git checkout -q de2ad833e9bd5c06082231d1da637789f7562816 && git submodule update --init --depth 1 -q
+          ../../patch_qwentts.sh "$(pwd)"
+          cmake -S . -B ../host -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DGGML_OPENMP=OFF -DGGML_BLAS=OFF -DBUILD_SHARED_LIBS=OFF > /dev/null
+          cmake --build ../host --target qwen-tts -j 4 2>&1 | tail -1
+      - name: Model (the app's copy) and the recognizer
+        run: |
+          B=https://github.com/$GITHUB_REPOSITORY/releases/download/models-v1
+          mkdir -p qdir
+          curl -sSL -o qdir/qwen-talker-1.7b-base-Q4_K_M.gguf $B/qwen_he-qwen-talker-1.7b-base-Q4_K_M.gguf
+          curl -sSL -o qdir/qwen-tokenizer-12hz-Q4_K_M.gguf $B/qwen_he-qwen-tokenizer-12hz-Q4_K_M.gguf
+          curl -sSL -o asr.tar "https://github.com/$GITHUB_REPOSITORY/releases/download/asr-mirror/asr.tar" && tar xf asr.tar && rm asr.tar
+          pip install -q faster-whisper soundfile scipy numpy
+      - name: Speak and listen
+        env:
+          QWEN_CLI: ${{ github.workspace }}/android/qwen/build/host/qwen-tts
+          QWEN_DIR: ${{ github.workspace }}/qdir
+        run: python tools/proof/run.py - - pieces.jsonl asr out ${{ matrix.shard }} 12 d_commentator,d_veteran
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qproof-${{ matrix.shard }}
+          path: out/proof_*.json
+
+  report:
+    needs: speak
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qproof-*
+          path: shards
+      - name: Report
+        run: python3 tools/proof/report.py shards rel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report-qwen
+          path: rel
