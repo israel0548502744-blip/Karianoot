@@ -48,4 +48,5 @@ jobs:
           tar czf emulator.tgz out
           gh release delete emulator-smoke -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
           gh release create emulator-smoke emulator.tgz -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
-            --title "Emulator smoke test" --notes "Screens and errors of the APK on an emulator. Not the app."
+            --title "Emulator smoke test" --notes "Screens and errors of the APK on an emulator. Not the app." \
+            || echo "::warning::could not publish the screens (GitHub refused the release); the test result above stands"
