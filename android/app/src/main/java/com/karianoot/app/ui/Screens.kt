@@ -39,6 +39,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.SportsSoccer
+import androidx.compose.material.icons.rounded.Queue
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Restore
@@ -126,7 +128,7 @@ import kotlin.math.sin
 
 enum class Tab(val title: String, val icon: ImageVector) {
     Studio("סטודיו", Icons.Rounded.GraphicEq), Library("ההקלטות", Icons.Rounded.LibraryMusic),
-    Models("מודלים", Icons.Rounded.Memory), About("הגדרות", Icons.Rounded.Settings)
+    Tips("טיפים", Icons.Rounded.SportsSoccer), Models("מודלים", Icons.Rounded.Memory), About("הגדרות", Icons.Rounded.Settings)
 }
 
 @Composable
@@ -146,6 +148,9 @@ fun App(app: KarianootApp, sharedText: String?, startTab: Tab = Tab.Studio, moti
                     when (tab) {
                         Tab.Studio -> StudioScreen(app, sharedText, history, openSettings = { tab = Tab.About }) { tab = Tab.Models }
                         Tab.Library -> LibraryScreen(app, history)
+                        Tab.Tips -> TipsScreen(app, studioText = {
+                            app.getSharedPreferences("studio", android.content.Context.MODE_PRIVATE).getString("text", "") ?: ""
+                        }) { t -> app.incoming.value = KarianootApp.Incoming(t, false); tab = Tab.Studio }
                         Tab.Models -> ModelsScreen(app)
                         Tab.About -> AboutScreen(app)
                     }
@@ -184,10 +189,15 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val speech = app.speech
     val states by models.states.collectAsState()
     val job by app.job.collectAsState()
-    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(sharedText ?: "")) }
+    val studioPrefs = remember { ctx.getSharedPreferences("studio", android.content.Context.MODE_PRIVATE) }
+    // The text stays when the app is closed (and the tips journal reads tips from it).
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(sharedText ?: studioPrefs.getString("text", "") ?: "")) }
     val text = field.text
     fun setText(t: String) { field = androidx.compose.ui.text.input.TextFieldValue(t, androidx.compose.ui.text.TextRange(t.length)) }
+    LaunchedEffect(field.text) { delay(400); studioPrefs.edit().putString("text", field.text).apply() }
     var effectsOpen by remember { mutableStateOf(false) }
+    var queueOpen by remember { mutableStateOf(false) }
+    val queued by app.queue.collectAsState()
     var readingOpen by remember { mutableStateOf(false) }
     val custom by app.voices.custom.collectAsState()
     val cloning by app.cloning.collectAsState()
@@ -280,6 +290,14 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 Text("יש גרסה חדשה (${u.number}). לחצו לעדכון.", color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             }
         }
+
+        if (queued.isNotEmpty()) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(1.dp, C.Stroke, RoundedCornerShape(18.dp))
+            .background(Color(0x14FFF4DC)).pressable { queueOpen = true }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Queue, null, tint = C.Gold, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("בתור: ${queued.size} קריינויות. לחצו לניהול והפעלה.", color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        }
+        if (queueOpen) QueueDialog(app) { queueOpen = false }
 
         if (!g2pReady || ready.isEmpty()) {
             Section(Modifier.enter(1)) {
@@ -441,7 +459,15 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
         if (!busy && voice != null && text.isNotBlank()) speech.estimateSeconds(text, voice, speed)?.let { est ->
             Text("זמן משוער: " + formatSeconds(est.coerceAtLeast(1f)), color = C.Faint, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
         }
-        GoldButton(if (busy) "מקריא… ${(job.progress * 100).toInt()}%" else "צור קריינות", Modifier.fillMaxWidth(), icon = Icons.Rounded.AutoAwesome,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+        SoftButton("לתור", icon = Icons.Rounded.Queue, enabled = g2pReady && voice != null && text.isNotBlank()) {
+            val v = voice ?: return@SoftButton
+            if (Regex("\\[[^\\]]{1,20}]").containsMatchIn(text)) { Toast.makeText(ctx, "יש עוד מה למלא בתבנית", Toast.LENGTH_SHORT).show(); return@SoftButton }
+            app.enqueue(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive), if (fit) target else 0f, voice2)
+            Toast.makeText(ctx, "נוסף לתור (${app.queue.value.size}). אפשר לכתוב את הבא.", Toast.LENGTH_SHORT).show()
+        }
+        Spacer(Modifier.width(8.dp))
+        GoldButton(if (busy) "מקריא… ${(job.progress * 100).toInt()}%" else "צור קריינות", Modifier.weight(1f), icon = Icons.Rounded.AutoAwesome,
             enabled = !busy && g2pReady && voice != null && text.isNotBlank()) {
             val v = voice ?: return@GoldButton
             // A template's [placeholders] not filled in yet would be read out as is.
@@ -452,6 +478,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 Toast.makeText(ctx, "לא מכיר את הסימון $it. אפשר להוסיף אפקט או הפסקה מהכפתור \"אפקט / הפסקה\".", Toast.LENGTH_LONG).show(); return@GoldButton
             }
             app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive), if (fit) target else 0f, voice2)
+        }
         }
     }
     }

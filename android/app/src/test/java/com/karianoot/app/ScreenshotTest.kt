@@ -71,6 +71,15 @@ class ScreenshotTest {
         shot("10_studio_two_voices", Tab.Studio, "א: אז מה אתה אומר על ארסנל נגד צ'לסי?\nב: אני הולך על תיקו, ביחס שלוש ארבעים.")
     }
 
+    @Test fun tipsJournal() {
+        val app = ApplicationProvider.getApplicationContext<KarianootApp>()
+        app.tips.add("ארסנל נגד צ'לסי", "ניצחון ארסנל", 2.1f)
+        app.tips.add("ריאל מדריד נגד ברצלונה", "שתי הקבוצות מבקיעות", 1.75f)
+        app.tips.add("מכבי חיפה נגד הפועל באר שבע", "תיקו", 3.4f)
+        app.tips.list.value.forEachIndexed { i, t -> if (i < 2) app.tips.set(t, if (i == 0) Tips.Status.WON else Tips.Status.LOST) }
+        shot("11_tips", Tab.Tips)
+    }
+
     @Test fun models() {
         install(Catalog.g2p)
         shot("3_models", Tab.Models)

@@ -65,6 +65,8 @@ class NarrationService : Service() {
             app.job.collectLatest { s ->
                 val nm = getSystemService(NotificationManager::class.java)
                 if (s.busy) {
+                    // Waiting for a charger: let the processor sleep (the charger's broadcast wakes us).
+                    wake?.let { w -> if (s.waiting && w.isHeld) w.release() else if (!s.waiting && !w.isHeld) w.acquire(60 * 60 * 1000L) }
                     val now = System.currentTimeMillis()
                     if (now - last > 500) { nm.notify(Notify.PROGRESS_ID, Notify.progress(this@NarrationService, s)); last = now }
                 } else {

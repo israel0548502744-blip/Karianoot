@@ -15,8 +15,8 @@ import java.util.zip.ZipOutputStream
 class Backup(private val ctx: Context) {
     private val ext get() = ctx.getExternalFilesDir(null)!!
     private val dirs = listOf("voices", "creations")
-    private val files = listOf("pronounce.json")
-    private val prefs = listOf("voice_order", "settings", "studio")
+    private val files = listOf("pronounce.json", "tips.json")
+    private val prefs = listOf("voice_order", "settings", "studio", "templates")
 
     /** Writes the backup to [uri]; returns how many files went in. */
     fun export(uri: Uri): Int = ctx.contentResolver.openOutputStream(uri)!!.use { export(it) }
@@ -26,7 +26,8 @@ class Backup(private val ctx: Context) {
         out.let { os ->
             ZipOutputStream(os.buffered()).use { z ->
                 fun put(name: String, bytes: ByteArray) { z.putNextEntry(ZipEntry(name)); z.write(bytes); z.closeEntry(); n++ }
-                for (d in dirs) File(ext, d).walkTopDown().filter { it.isFile }.forEach { f ->
+                // Videos are left out: they are big and can be made again from the recording.
+                for (d in dirs) File(ext, d).walkTopDown().filter { it.isFile && it.parentFile?.name != "videos" }.forEach { f ->
                     put("$d/" + f.relativeTo(File(ext, d)).invariantSeparatorsPath, f.readBytes())
                 }
                 for (f in files) File(ext, f).takeIf { it.exists() }?.let { put(f, it.readBytes()) }

@@ -19,6 +19,8 @@ data class JobState(
     val result: Creation? = null,
     val error: String? = null,
     val startedAt: Long = 0L,
+    /** The queue is waiting for a charger: the processor may sleep meanwhile. */
+    val waiting: Boolean = false,
 )
 
 /**
@@ -35,6 +37,7 @@ class KarianootApp : Application() {
     lateinit var updates: Updates
     lateinit var crashes: CrashLog
     lateinit var lexicon: LexiconUpdates
+    lateinit var tips: Tips
     val backup by lazy { Backup(this) }
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _job = MutableStateFlow(JobState())
@@ -68,8 +71,10 @@ class KarianootApp : Application() {
         speech = Speech(this, models) { pronounce.list.value }
         voices = Voices(this, models)
         lexicon = LexiconUpdates(this).also { it.loadCached() }
+        tips = Tips(this)
         Notify.createChannels(this)
         Shortcuts.install(this)
+        queue.value = loadQueue()
     }
 
     private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
@@ -115,8 +120,93 @@ class KarianootApp : Application() {
         }
     }
 
+    // ---- "תור": several narrations one after another (for the night), optionally only while charging ----
+
+    /** One narration waiting in the queue: the text and the studio settings it was added with. */
+    data class Queued(val id: Long, val text: String, val voiceId: String, val voice2Id: String?, val steps: Int, val speed: Float,
+                      val pause: Float, val temperature: Float, val target: Float)
+
+    private val queueFile by lazy { java.io.File(filesDir, "queue.json") }
+    val queue = MutableStateFlow<List<Queued>>(emptyList())
+    val queueRunning = MutableStateFlow(false)
+    var queueWhenCharging: Boolean
+        get() = settings.getBoolean("queue_charging", true)
+        set(v) { settings.edit().putBoolean("queue_charging", v).apply() }
+
+    private fun loadQueue() = runCatching {
+        val a = org.json.JSONArray(queueFile.readText())
+        (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            Queued(o.getLong("id"), o.getString("text"), o.getString("voice"), o.optString("voice2").ifEmpty { null }, o.getInt("steps"),
+                o.getDouble("speed").toFloat(), o.getDouble("pause").toFloat(), o.getDouble("temp").toFloat(), o.optDouble("target", 0.0).toFloat())
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveQueue(l: List<Queued>) {
+        queue.value = l
+        val a = org.json.JSONArray()
+        for (q in l) a.put(org.json.JSONObject().put("id", q.id).put("text", q.text).put("voice", q.voiceId).put("voice2", q.voice2Id ?: "")
+            .put("steps", q.steps).put("speed", q.speed.toDouble()).put("pause", q.pause.toDouble()).put("temp", q.temperature.toDouble()).put("target", q.target.toDouble()))
+        runCatching { queueFile.writeText(a.toString()) }
+    }
+
+    fun enqueue(text: String, voice: VoiceInfo, opt: BlueTts.Options, target: Float, voice2: VoiceInfo?) =
+        saveQueue(queue.value + Queued(System.currentTimeMillis(), text, voice.id, voice2?.id, opt.steps, opt.speed, opt.silence, opt.temperature, target))
+
+    fun unqueue(q: Queued) = saveQueue(queue.value.filter { it.id != q.id })
+
+    private fun charging() = getSystemService(android.os.BatteryManager::class.java)?.isCharging == true
+
+    /** Waits (without keeping the processor awake) until the phone is on a charger, or the queue is stopped. */
+    private suspend fun waitForCharger() {
+        if (charging()) return
+        val plugged = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context, i: Intent) { plugged.complete(Unit) }
+        }
+        registerReceiver(r, android.content.IntentFilter(Intent.ACTION_POWER_CONNECTED))
+        try {
+            while (queueRunning.value && !charging() && !plugged.isCompleted) kotlinx.coroutines.withTimeoutOrNull(60_000) { plugged.await() }
+        } finally { unregisterReceiver(r) }
+    }
+
+    /** Runs the queue in order; each finished narration joins the recordings. Call from the app's screen. */
+    fun startQueue() {
+        if (_job.value.busy || queueRunning.value || queue.value.isEmpty()) return
+        queueRunning.value = true
+        _job.value = JobState(busy = true, stage = "התור מתחיל…", startedAt = System.currentTimeMillis())
+        ContextCompat.startForegroundService(this, Intent(this, NarrationService::class.java))
+        scope.launch {
+            var done = 0; var last: Creation? = null; var failed = 0
+            while (queueRunning.value) {
+                val q = queue.value.firstOrNull() ?: break
+                if (queueWhenCharging && !charging()) {
+                    _job.value = _job.value.copy(stage = "ממתין לטעינה… (${queue.value.size} בתור)", waiting = true)
+                    waitForCharger()
+                    if (!queueRunning.value) break
+                    _job.value = _job.value.copy(waiting = false)
+                }
+                val all = (Catalog.voices + voices.custom.value).map(voiceOrder::named)
+                val v = all.firstOrNull { it.id == q.voiceId }
+                if (v == null || !v.needs.all { models.isReady(it) }) { failed++; unqueue(q); continue }
+                val v2 = q.voice2Id?.let { id -> all.firstOrNull { it.id == id } }
+                val left = queue.value.size
+                runCatching {
+                    speech.speak(withClosing(q.text), v, BlueTts.Options(steps = q.steps, speed = q.speed, silence = q.pause, temperature = q.temperature),
+                        q.target, studioAlways, v2) { st, p -> _job.value = _job.value.copy(stage = "תור (נשארו $left) · $st", progress = p) }
+                }.onSuccess { c -> done++; last = c; _job.value = _job.value.copy(result = c) }
+                    .onFailure { if (speech.wasCancelled()) queueRunning.value = false else failed++ }
+                if (queueRunning.value || !speech.wasCancelled()) unqueue(q)
+            }
+            queueRunning.value = false
+            _job.value = JobState(result = last, error = if (done == 0) (if (failed > 0) "התור נכשל" else "הקריינות בוטלה") else null,
+                stage = "התור הסתיים: $done קריינויות")
+        }
+    }
+
+    fun stopQueue() { if (queueRunning.value) { queueRunning.value = false; speech.cancel() } }
+
     /** Stops the narration being made (between pieces for Blue, within a second for Qwen). */
-    fun cancelNarration() { if (_job.value.busy) { _job.value = _job.value.copy(stage = "מבטל…"); speech.cancel() } }
+    fun cancelNarration() { if (_job.value.busy) { queueRunning.value = false; _job.value = _job.value.copy(stage = "מבטל…"); speech.cancel() } }
 
     /** The voice whose sample is being made, or null. */
     val previewing = MutableStateFlow<String?>(null)
