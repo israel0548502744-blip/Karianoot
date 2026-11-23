@@ -32,14 +32,15 @@ jobs:
           echo "$have" | grep -qx "ocr-LICENSE-tessdata.txt" || { cp tessdata/LICENSE ocr-LICENSE-tessdata.txt; gh release upload models-v1 ocr-LICENSE-tessdata.txt -R "$GITHUB_REPOSITORY"; }
       - name: Render test slips and read them
         run: |
-          sudo apt-get install -y -q tesseract-ocr fonts-noto-core > /dev/null
+          sudo apt-get install -y -q tesseract-ocr fonts-dejavu-core > /dev/null
           tesseract --version | head -1 | tee -a report.txt
           pip install -q pillow
           mkdir -p ocr && python3 - <<'PY'
           from PIL import Image, ImageDraw, ImageFont
           import glob
-          font = [f for f in glob.glob("/usr/share/fonts/truetype/noto/NotoSansHebrew-*.ttf") if "Regular" in f or "Bold" in f]
-          bold = ImageFont.truetype(sorted(font)[0], 46); small = ImageFont.truetype(sorted(font)[-1], 38)
+          # A font with Hebrew AND digits (Noto Sans Hebrew has no digits: it drew empty boxes, Nov 23).
+          bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 46)
+          small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 38)
           rows = [("ארסנל - צ'לסי", "1", "2.10"), ("ריאל מדריד - ברצלונה", "שתי הקבוצות יבקיעו", "1.75"),
                   ("מכבי חיפה - הפועל באר שבע", "X", "3.40"), ("באיירן - דורטמונד", "מעל 2.5 שערים", "1.60")]
           for name, bg, fg, acc in [("light", "#ffffff", "#111111", "#0a7d32"), ("dark", "#14161a", "#f2f2f2", "#f5c542")]:
@@ -59,7 +60,7 @@ jobs:
               if name == "dark": g = Image.eval(g, lambda v: 255 - v)
               g.save(f"ocr/{name}_prep.png")
           PY
-          for f in ocr/*_prep.png; do b=${f%.png}
+          for f in ocr/*.png; do b=${f%.png}
             tesseract $f $b.heb --tessdata-dir tessdata -l heb --psm 6 -c tessedit_create_tsv=1 > /dev/null 2>&1
             python3 tools/release/slip_merge.py $f $b.heb.tsv tessdata > $b.txt
             echo "=== $b (Hebrew pass + digits re-read from each box)" >> report.txt; cat $b.txt >> report.txt

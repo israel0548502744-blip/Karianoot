@@ -101,7 +101,7 @@ object SlipText {
      */
     fun text(words: List<OcrWord>, reread: (OcrWord) -> String?): String {
         val fixed = words.mapNotNull { w ->
-            if (!needsDigits(w.text)) w else reread(w)?.trim()?.takeIf { Regex("[0-9.,X]+").matches(it) }?.let { w.copy(text = it) }
+            if (!needsDigits(w.text)) w else reread(w)?.trim()?.takeIf { Regex("[0-9.,Xx]+").matches(it) }?.let { w.copy(text = it.replace('x', 'X')) }
         }
         return fixed.groupBy { it.line }.values.sortedBy { ws -> ws.minOf { it.y } }
             .joinToString("\n") { ws -> ws.sortedByDescending { it.x }.joinToString(" ") { it.text } }

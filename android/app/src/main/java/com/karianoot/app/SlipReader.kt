@@ -32,7 +32,7 @@ object SlipReader {
             heb.setImage(prepared)
             val words = SlipText.hocrWords(heb.getHOCRText(0) ?: "")
             dig.setPageSegMode(TessBaseAPI.PageSegMode.PSM_SINGLE_LINE)
-            dig.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, "0123456789.,X")
+            dig.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, "0123456789.,Xx")
             dig.setImage(prepared)
             return SlipText.text(words) { w ->
                 val pad = maxOf(4, w.h / 4)

@@ -31,8 +31,8 @@ for row in open(tsv, encoding="utf-8").read().splitlines()[1:]:
         with tempfile.NamedTemporaryFile(suffix=".png") as crop:
             im.crop((max(0, x - pad), max(0, y - pad), x + w + pad, y + h + pad)).save(crop.name)
             out = subprocess.run(["tesseract", crop.name, "-", "--tessdata-dir", tessdata, "-l", "eng", "--psm", "7",
-                                  "-c", "tessedit_char_whitelist=0123456789.,X"], capture_output=True, text=True).stdout.strip()
-        t = out if re.fullmatch(r"[0-9.,X]+", out or "") else ""
+                                  "-c", "tessedit_char_whitelist=0123456789.,Xx"], capture_output=True, text=True).stdout.strip()
+        t = out.replace("x", "X") if re.fullmatch(r"[0-9.,Xx]+", out or "") else ""
     if t:
         lines.setdefault((f[2], f[3], f[4]), []).append((x, y, t))
 for key, ws in sorted(lines.items(), key=lambda kv: min(w[1] for w in kv[1])):
