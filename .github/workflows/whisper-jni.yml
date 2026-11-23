@@ -56,7 +56,8 @@ jobs:
           python3 - <<'PY'
           import json, glob
           p = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
-          rows = [{"file": f, "text": p[int(f.split("_")[-1][:-4])]["text"]} for f in sorted(glob.glob("wavs/q8_0/spk*_*.wav"))[:6]]
+          import os
+          rows = [{"file": os.path.abspath(f), "text": p[int(f.split("_")[-1][:-4])]["text"]} for f in sorted(glob.glob("wavs/q8_0/spk*_*.wav"))[:6]]
           json.dump(rows, open("wavs/rows.json", "w"), ensure_ascii=False)
           PY
       - name: WhisperTest through the bridge
