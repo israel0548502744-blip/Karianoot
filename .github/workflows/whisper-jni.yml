@@ -1,0 +1,66 @@
+name: Phone proofreader bridge
+
+# whisper.cpp (pinned, android/whisper/COMMIT) + whisper_jni.cpp built for the host; WhisperTest hears Magpie takes through
+# the bridge (CER, speed). The q5_0 model (ivrit-ai/whisper-large-v3-turbo-ggml, Apache-2.0) goes into models-v1 once
+# (proof-whisper-he.bin, never replaced); size and sha256 are printed for Catalog.kt.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/whisper-jni.yml", "android/whisper/**", "android/engine/src/main/kotlin/com/karianoot/engine/WhisperNative.kt"]
+
+permissions:
+  contents: write
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Host bridge
+        run: |
+          command -v ninja > /dev/null || pipx install ninja > /dev/null
+          android/whisper/build_android.sh --host
+          S=android/whisper/build/whisper.cpp
+          cmake -S $S -B $S/build-tools -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON > /dev/null
+          cmake --build $S/build-tools -j 4 --target whisper-quantize > /dev/null
+      - name: Model (q5_0) into models-v1 once
+        run: |
+          pip install -q huggingface_hub soundfile scipy numpy
+          if curl -sSfL -o proof.bin "https://github.com/$GITHUB_REPOSITORY/releases/download/models-v1/proof-whisper-he.bin"; then
+            echo "already hosted"
+          else
+            python3 -c "
+          from huggingface_hub import HfApi, hf_hub_download; import shutil
+          i = HfApi().model_info('ivrit-ai/whisper-large-v3-turbo-ggml'); print('revision', i.sha)
+          shutil.copy(hf_hub_download('ivrit-ai/whisper-large-v3-turbo-ggml', 'ggml-model.bin', revision=i.sha), 'full.bin')"
+            $(find android/whisper/build/whisper.cpp/build-tools -name whisper-quantize -type f | head -1) full.bin proof.bin q5_0 > /dev/null
+            cp proof.bin proof-whisper-he.bin && gh release upload models-v1 proof-whisper-he.bin -R "$GITHUB_REPOSITORY"
+          fi
+          ls -l proof.bin; sha256sum proof.bin
+      - name: Takes of the test passage
+        run: |
+          curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz
+          python3 - <<'PY'
+          import json, glob
+          p = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          rows = [{"file": f, "text": p[int(f.split("_")[-1][:-4])]["text"]} for f in sorted(glob.glob("wavs/q8_0/spk*_*.wav"))[:6]]
+          json.dump(rows, open("wavs/rows.json", "w"), ensure_ascii=False)
+          PY
+      - name: WhisperTest through the bridge
+        run: |
+          KARIANOOT_WHISPER=$PWD/proof.bin KARIANOOT_WHISPER_WAVS=$PWD/wavs gradle -p android :engine:test --tests 'com.karianoot.engine.WhisperTest' \
+            -Pkarianoot.whisperjni=$PWD/android/whisper/build/host/libwhisperjni.so --no-daemon -i 2>&1 | tee t.log | grep -E "CHECK|FAILED|Exception" || true
+          grep -q "CHECK whisper mean" t.log && ! grep -q "WhisperTest > .* FAILED" t.log
