@@ -61,13 +61,20 @@ def tap(label, wait=15):
     time.sleep(1.5)
 
 
-def tap_scrolled(label, tries=8):
-    """Like tap, but scrolls down (a long screen) until [label] shows."""
+def screen():
+    """(width, height) of the emulator's screen in pixels."""
+    m = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size", check=False))
+    return (int(m.group(1)), int(m.group(2))) if m else (1080, 1920)
+
+
+def tap_scrolled(label, tries=10):
+    """Like tap, but scrolls down (a long screen) until [label] shows. The swipe is relative to the screen size."""
+    w, h = screen()
     for _ in range(tries):
         c = find(label, wait=3)
         if c:
             adb("shell", "input", "tap", str(c[0]), str(c[1])); time.sleep(1.5); return
-        adb("shell", "input", "swipe", "500", "1500", "500", "700", "300"); time.sleep(1)
+        adb("shell", "input", "swipe", str(w // 2), str(int(h * 0.62)), str(w // 2), str(int(h * 0.3)), "400"); time.sleep(1)
     raise RuntimeError(f"not on screen even after scrolling: {label}")
 
 
