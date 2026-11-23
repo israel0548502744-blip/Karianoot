@@ -20,10 +20,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: llama.cpp (the project's own Linux build, b11669)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sSfL -o llama.zip https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-ubuntu-x64.zip
-          sha256sum llama.zip | tee llama_version.txt
-          mkdir -p lc && unzip -q llama.zip -d lc
+          URL=$(gh api repos/ggml-org/llama.cpp/releases/tags/b11669 -q '.assets[] | select(.name | test("ubuntu-x64")) | select(.name | test("vulkan|cuda|rocm|sycl|openvino") | not) | .browser_download_url' | head -1)
+          echo "asset: $URL"; curl -sSfL -o llama.pkg "$URL"
+          sha256sum llama.pkg | tee llama_version.txt; echo "$URL" >> llama_version.txt
+          mkdir -p lc && (unzip -q llama.pkg -d lc 2>/dev/null || tar xf llama.pkg -C lc)
           S=$(find lc -name llama-server -type f | head -1); echo "SERVER=$S" >> $GITHUB_ENV; ls -la "$S"
           "$S" --version 2>&1 | head -3 | tee -a llama_version.txt
       - name: Candidate models (licence check first)
