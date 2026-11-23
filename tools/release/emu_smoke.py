@@ -61,6 +61,16 @@ def tap(label, wait=15):
     time.sleep(1.5)
 
 
+def tap_scrolled(label, tries=8):
+    """Like tap, but scrolls down (a long screen) until [label] shows."""
+    for _ in range(tries):
+        c = find(label, wait=3)
+        if c:
+            adb("shell", "input", "tap", str(c[0]), str(c[1])); time.sleep(1.5); return
+        adb("shell", "input", "swipe", "500", "1500", "500", "700", "300"); time.sleep(1)
+    raise RuntimeError(f"not on screen even after scrolling: {label}")
+
+
 def alive():
     return adb("shell", "pidof", PKG, check=False).strip() != ""
 
@@ -83,10 +93,10 @@ step("open", lambda: (adb("shell", "am", "start", "-W", "-n", f"{PKG}/.MainActiv
 step("tab_library", lambda: tap("ההקלטות"))
 step("tab_models", lambda: tap("מודלים"))
 step("tab_settings", lambda: tap("הגדרות"))
-step("check_updates", lambda: (tap("בדיקת עדכונים"), time.sleep(5)))
-def scroll_down():
-    adb("shell", "input", "swipe", "500", "1500", "500", "500", "300"); time.sleep(1)
-step("pronounce_dialog", lambda: (scroll_down(), tap("תיקוני הגייה"), adb("shell", "input", "keyevent", "4"), time.sleep(1)))
+step("check_updates", lambda: (tap_scrolled("בדיקת עדכונים"), time.sleep(5)))
+step("pronounce_dialog", lambda: (tap_scrolled("תיקוני הגייה"), adb("shell", "input", "keyevent", "4"), time.sleep(1)))
+step("tab_studio_effects", lambda: (tap("סטודיו"), tap_scrolled("אפקט / הפסקה"), adb("shell", "input", "keyevent", "4"), time.sleep(1)))
+step("templates_dialog", lambda: (tap_scrolled("תבניות ופתיחים"), adb("shell", "input", "keyevent", "4"), time.sleep(1)))
 step("tab_studio", lambda: tap("סטודיו"))
 step("rotate_and_back", lambda: (adb("shell", "settings", "put", "system", "user_rotation", "1"), time.sleep(3),
                                  adb("shell", "settings", "put", "system", "user_rotation", "0"), time.sleep(3)))
