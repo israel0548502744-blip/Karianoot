@@ -187,3 +187,31 @@ The user makes football-tips videos; this replaces ElevenLabs for their Hebrew v
 3. "My voice": Blue zero-shot from a recording (blue-onnx-v2 `codec_encoder`/`style_encoder`), then Chatterbox.
 4. Noa (Piper, CC BY) with Phonikud; OmniVoice (check Hebrew); Orpheus Hebrew (check license) on the NPU.
 5. NPU (QNN) for the heavy graphs; background music mixing; templates for the football videos.
+
+## Nov 23 2026 ("30 ideas, do them all")
+- Engine (all JVM-tested locally via a standalone Gradle project in the scratchpad: settings with only kotlin-jvm 2.1.0 pointing
+  at engine/src; the Android build needs CI because google maven is blocked here):
+  `Master.kt` "סאונד אולפן" (EQ, 3:1 compressor, BS.1770 loudness to -14 LUFS, look-ahead limiter -1 dBFS); `Mixer.duck`
+  (music up in pauses > 0.35 s, ducks 100 ms before words); `Sfx.kt` 7 synthesized effects (no recordings, no licence);
+  `Script.kt` markers {הפסקה 2} {שריקה} {קהל}… and two-voice turns (lines "א:" / "ב:"); `Captions.kt` word timings
+  (voiced time split by spoken length, pauses snapped to word boundaries) + SRT; `IpaHebrew.kt` IPA -> Hebrew with niqqud,
+  stressed syllable marked (v = ב inside a word); `Readings.kt` word <-> IPA pairs (97% of proofreader sentences, readings.yml);
+  `TipText.kt` tips found in a script + weekly summary; `SlipText.kt` tips from OCR text of a slip + a script; Lexicon
+  `setExtra` (downloaded names, release "lexicon" from tools/lexicon/lexicon.json, lexicon.yml) and `setUser` (fixes picked by ear
+  are IPA, applied at the lexicon step so prefixes are read right; Pronounce skips IPA fixes).
+- App: markers highlighted in the text box and inserted at the cursor; personas; "אורך מדויק" (TimeStretch of the whole take,
+  spans scaled); "עריכת סאונד" (studio, intro/outro effect, ducked music; parts kept shifted for captions); settings for studio
+  sound on every narration and the "הימור אחראי" closing line (off by default); paste widget + launcher shortcut + "קריינות"
+  in the text-selection menu (MainActivity handles onNewIntent, clipboard read on window focus); openers/blocks/closers and the
+  user's own templates; "איך זה ייקרא" (ReadingDialog, WordFixDialog: stress variants and own spelling, each playable);
+  in-app recording for a new voice (RECORD_AUDIO); two voices; night queue (KarianootApp.startQueue, waits for a charger
+  with the wake lock released, JobState.waiting); tips tab (Tips.kt, tips.json in the backup); studio text kept in prefs.
+- Video (`VideoMaker.kt`): Canvas -> bitmap -> GLES texture on the H.264 encoder's input surface, eglPresentationTimeANDROID
+  per frame, AAC audio, MediaMuxer; 1080x1920 (falls back to 720x1280). Tested on the emulator (video-test.yml, androidTest
+  VideoMakerTest: tracks, length, caption pixels; frames in prerelease video-test). Share to TikTok/Instagram/YouTube/WhatsApp.
+- Emulator smoke test: the emulator screen is 320x640: scroll relative to `wm size` (tap_scrolled).
+- CI hygiene: changing Lexicon.kt / TextPrep.kt / MagpieNative.kt triggers the full proofreader (14 jobs up to 150 min each):
+  cancel it when the change is not about words.
+- Probes: llm-probe.yml (small open models writing scripts, llama.cpp b11669 Linux build), whisper-probe.yml (ivrit-ai ggml on
+  whisper.cpp for an on-phone proofreader), ocr-probe.yml (Tesseract tessdata_fast heb+eng 4.1.0 -> models-v1 as
+  ocr-tessdata-*.traineddata). docs/monetization.md: one-time "פרו", no subscription (not built: needs a Play account).
