@@ -1,0 +1,43 @@
+name: Script writer probe
+
+# Can a small open model (commercial licence) write a good Hebrew tips-video script on the phone? llama.cpp on a 4-core
+# runner, a few prompts from structured match data, timing per model. Output: prerelease "llm-probe" (report.md).
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/llm-probe.yml", "tools/llm/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: llama.cpp
+        run: |
+          git clone -q --depth 1 --branch b11669 https://github.com/ggml-org/llama.cpp lc || git clone -q --depth 1 https://github.com/ggml-org/llama.cpp lc
+          git -C lc log -1 --format='%H %cd' | tee llama_version.txt
+          cmake -S lc -B lc/build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=ON > /dev/null
+          cmake --build lc/build -j 4 --target llama-server > /dev/null 2>&1 || cmake --build lc/build -j 4 --target llama-server 2>&1 | tail -20
+          ls lc/build/bin
+      - name: Candidate models (licence check first)
+        run: |
+          pip install -q huggingface_hub
+          python3 tools/llm/pick_models.py | tee models.txt
+      - name: Write scripts
+        run: python3 tools/llm/probe.py lc/build/bin/llama-server models.txt out
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls out || exit 0
+          cp models.txt llama_version.txt out/ || true
+          gh release delete llm-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create llm-probe out/* -R "$GITHUB_REPOSITORY" --prerelease --title "Script writer probe" --notes "Hebrew scripts from small models. Not the app." || true

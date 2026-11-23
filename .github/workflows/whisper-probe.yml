@@ -1,0 +1,104 @@
+name: Phone proofreader probe
+
+# Can the Hebrew recognizer run inside the phone to proofread a narration? whisper.cpp (MIT) with ivrit-ai's ggml model
+# (licence checked), full / q8_0 / q5_0, on Magpie takes of the test passage: CER against the text and time per second of
+# audio on a 4-core runner. Output: prerelease "whisper-probe".
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/whisper-probe.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: whisper.cpp
+        run: |
+          git clone -q --depth 1 https://github.com/ggml-org/whisper.cpp wc
+          git -C wc log -1 --format='%H %cd' | tee report.txt
+          cmake -S wc -B wc/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_AVX2=ON > /dev/null
+          cmake --build wc/build -j 4 --target whisper-cli whisper-quantize > /dev/null 2>&1 || cmake --build wc/build -j 4 2>&1 | tail -20
+          ls wc/build/bin
+      - name: Model (ivrit-ai, licence printed)
+        run: |
+          pip install -q huggingface_hub soundfile scipy numpy
+          python3 - <<'PY' | tee -a report.txt
+          from huggingface_hub import HfApi, hf_hub_download
+          api = HfApi()
+          for m in api.list_models(author="ivrit-ai", search="ggml", limit=30):
+              try:
+                  i = api.model_info(m.id, files_metadata=True)
+                  print("##", m.id, (i.card_data or {}).get("license") if i.card_data else None, [(s.rfilename, (s.size or 0) // 2**20) for s in i.siblings if s.rfilename.endswith(".bin")][:6])
+              except Exception as e:
+                  print("##", m.id, e)
+          PY
+          python3 - <<'PY'
+          from huggingface_hub import HfApi, hf_hub_download
+          api = HfApi()
+          for repo in ["ivrit-ai/whisper-large-v3-turbo-ggml", "ivrit-ai/whisper-large-v3-ggml"]:
+              try:
+                  i = api.model_info(repo, files_metadata=True)
+              except Exception as e:
+                  print(repo, e); continue
+              bins = sorted([s for s in i.siblings if s.rfilename.endswith(".bin")], key=lambda s: s.size or 0)
+              f = [s for s in bins if "q" not in s.rfilename.lower()] or bins
+              p = hf_hub_download(repo, f[-1].rfilename, revision=i.sha)
+              import shutil; shutil.copy(p, "model.bin"); print("using", repo, f[-1].rfilename, i.sha); break
+          PY
+          ls -la model.bin
+          for q in q8_0 q5_0; do wc/build/bin/whisper-quantize model.bin model-$q.bin $q > /dev/null 2>&1 && ls -la model-$q.bin; done
+      - name: Takes of the test passage
+        run: |
+          curl -sSL -o w.tgz "https://github.com/$GITHUB_REPOSITORY/releases/download/magpie-gguf/wavs.tgz" && tar xzf w.tgz
+          mkdir -p in && python3 - <<'PY'
+          import json, glob, soundfile as sf, numpy as np
+          from scipy.signal import resample_poly
+          p = json.load(open("tools/magpie/passage.json", encoding="utf-8"))["pieces"]
+          rows = []
+          for f in sorted(glob.glob("wavs/q8_0/spk*_*.wav"))[:12]:
+              spk, i = f.split("/")[-1][3:-4].split("_")
+              a, sr = sf.read(f, dtype="float32")
+              sf.write(f"in/{spk}_{i}.wav", resample_poly(a, 16000, sr).astype(np.float32), 16000, subtype="PCM_16")
+              rows.append({"file": f"in/{spk}_{i}.wav", "text": p[int(i)]["text"], "seconds": len(a) / sr})
+          json.dump(rows, open("in/rows.json", "w"), ensure_ascii=False)
+          print(len(rows), "takes", round(sum(r["seconds"] for r in rows)), "s")
+          PY
+      - name: Transcribe and score
+        run: |
+          python3 - <<'PY' | tee -a report.txt
+          import json, os, subprocess, time, unicodedata
+          rows = json.load(open("in/rows.json", encoding="utf-8"))
+          norm = lambda s: "".join(c for c in unicodedata.normalize("NFD", s) if "א" <= c <= "ת")
+          def cer(r, h):
+              r, h = norm(r), norm(h); d = list(range(len(h) + 1))
+              for i in range(1, len(r) + 1):
+                  prev, d[0] = d[0], i
+                  for j in range(1, len(h) + 1):
+                      cur = min(d[j] + 1, d[j - 1] + 1, prev + (r[i - 1] != h[j - 1])); prev, d[j] = d[j], cur
+              return d[len(h)] / max(1, len(r))
+          audio = sum(r["seconds"] for r in rows)
+          for m in ["model.bin", "model-q8_0.bin", "model-q5_0.bin"]:
+              if not os.path.exists(m): continue
+              t0 = time.time(); cs = []
+              for r in rows:
+                  out = subprocess.run(["wc/build/bin/whisper-cli", "-m", m, "-l", "he", "-t", "4", "-nt", "-f", r["file"]], capture_output=True, text=True).stdout
+                  cs.append(cer(r["text"], out)); 
+                  if m == "model-q5_0.bin" and len(cs) <= 3: print("  heard:", out.strip()[:140])
+              dt = time.time() - t0
+              print(f"{m}: {os.path.getsize(m) // 2**20} MB, CER {sum(cs) / len(cs):.3f}, work/audio {dt / audio:.2f} (4 cores, incl. load per file)")
+          PY
+      - name: Publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete whisper-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create whisper-probe report.txt -R "$GITHUB_REPOSITORY" --prerelease --title "Phone proofreader probe" --notes "whisper.cpp + ivrit-ai on CI. Not the app." || true
