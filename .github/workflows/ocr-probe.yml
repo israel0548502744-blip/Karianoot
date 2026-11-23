@@ -60,8 +60,8 @@ jobs:
               g.save(f"ocr/{name}_prep.png")
           PY
           for f in ocr/*_prep.png; do b=${f%.png}
-            tesseract $f $b.heb --tessdata-dir tessdata -l heb --psm 6 tsv > /dev/null 2>&1
-            tesseract $f $b.dig --tessdata-dir tessdata -l eng --psm 11 -c tessedit_char_whitelist=0123456789.,X tsv > /dev/null 2>&1
+            tesseract $f $b.heb --tessdata-dir tessdata -l heb --psm 6 -c tessedit_create_tsv=1 2>&1 | tail -2
+            tesseract $f $b.dig --tessdata-dir tessdata -l eng --psm 11 -c tessedit_char_whitelist=0123456789.,X -c tessedit_create_tsv=1 2>&1 | tail -2
             python3 tools/release/slip_merge.py $b.heb.tsv $b.dig.tsv > $b.txt
             echo "=== $b (merged)" >> report.txt; cat $b.txt >> report.txt
           done
