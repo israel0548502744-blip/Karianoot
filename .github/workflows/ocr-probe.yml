@@ -6,7 +6,7 @@ name: Slip reader probe
 on:
   workflow_dispatch:
   push:
-    paths: [".github/workflows/ocr-probe.yml", "android/engine/src/main/kotlin/com/karianoot/engine/SlipText.kt"]
+    paths: [".github/workflows/ocr-probe.yml", "android/engine/src/main/kotlin/com/karianoot/engine/SlipText.kt", "tools/release/slip_merge.py"]
 
 permissions:
   contents: write
@@ -59,7 +59,13 @@ jobs:
               if name == "dark": g = Image.eval(g, lambda v: 255 - v)
               g.save(f"ocr/{name}_prep.png")
           PY
-          for f in ocr/*.png; do b=${f%.png}; tesseract $f $b --tessdata-dir tessdata -l heb+eng --psm 6 > /dev/null 2>&1; echo "=== $b" >> report.txt; cat $b.txt >> report.txt; done
+          for f in ocr/*_prep.png; do b=${f%.png}
+            tesseract $f $b.heb --tessdata-dir tessdata -l heb --psm 6 tsv > /dev/null 2>&1
+            tesseract $f $b.dig --tessdata-dir tessdata -l eng --psm 11 -c tessedit_char_whitelist=0123456789.,X tsv > /dev/null 2>&1
+            python3 tools/release/slip_merge.py $b.heb.tsv $b.dig.tsv > $b.txt
+            echo "=== $b (merged)" >> report.txt; cat $b.txt >> report.txt
+          done
+          rm -f ocr/dark.txt ocr/light.txt
           cat report.txt
       - uses: actions/setup-java@v4
         with:
