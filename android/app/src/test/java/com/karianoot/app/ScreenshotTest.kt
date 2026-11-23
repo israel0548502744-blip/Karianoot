@@ -66,6 +66,11 @@ class ScreenshotTest {
         shot("9_studio_markers", Tab.Studio, "{שריקה} ערב טוב לכל האוהדים! {הפסקה} המשחק הראשון: [קבוצה] נגד [קבוצה]. {קהל}")
     }
 
+    @Test fun studioTwoVoices() {
+        install(Catalog.g2p, Catalog.blue25)
+        shot("10_studio_two_voices", Tab.Studio, "א: אז מה אתה אומר על ארסנל נגד צ'לסי?\nב: אני הולך על תיקו, ביחס שלוש ארבעים.")
+    }
+
     @Test fun models() {
         install(Catalog.g2p)
         shot("3_models", Tab.Models)

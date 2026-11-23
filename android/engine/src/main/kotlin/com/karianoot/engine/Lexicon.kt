@@ -1141,11 +1141,22 @@ object Lexicon {
     fun setExtra(words: Map<String, String>): Int {
         val ok = words.filter { (k, v) -> KEY_OK.matches(k) && IPA_OK.matches(v) && v.contains('ˈ') }
         extra = ok
-        PATTERN = pattern(WORDS.keys + ok.keys)
+        PATTERN = pattern(WORDS.keys + ok.keys + user.keys)
         return ok.size
     }
 
     fun extraCount() = extra.size
+
+    /** The user's own fixes picked by ear ("איך זה ייקרא"): word -> IPA. They win over everything. */
+    @Volatile private var user: Map<String, String> = emptyMap()
+
+    fun setUser(words: Map<String, String>) {
+        user = words.mapKeys { HebrewG2P.stripNiqqud(it.key.trim()) }.filter { (k, v) -> KEY_OK.matches(k) && IPA_OK.matches(v) }
+        PATTERN = pattern(WORDS.keys + extra.keys + user.keys)
+    }
+
+    /** A pronunciation fix written as IPA (from "איך זה ייקרא"), not as Hebrew. */
+    fun isIpa(s: String) = s.contains('ˈ') && s.none { it.code in 0x0590..0x05FF }
 
     /** [token] is a protected word, maybe behind one or two prefix letters of its own. */
     private fun isProtected(token: String) =
@@ -1155,7 +1166,7 @@ object Lexicon {
         val t = text.replace('׳', '\'')
         return PATTERN.replace(t) { m ->
             if (isProtected(m.value)) return@replace m.value
-            val pre = prefix(m.groupValues[1]); val ipa = extra[m.groupValues[2]] ?: WORDS.getValue(m.groupValues[2])
+            val pre = prefix(m.groupValues[1]); val ipa = user[m.groupValues[2]] ?: extra[m.groupValues[2]] ?: WORDS.getValue(m.groupValues[2])
             // A prefix before a vowel keeps a glottal stop, as the G2P reads "לאמבאפה": le-ʔembape.
             pre + (if (pre.isNotEmpty() && ipa.first() in "aeiou") "ʔ" else "") + ipa
         }

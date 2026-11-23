@@ -11,7 +11,7 @@ import java.io.File
 /** The user's "say this word like that" list, kept next to the models (survives app updates). */
 class Pronunciations(ctx: Context) {
     private val file = File(ctx.getExternalFilesDir(null), "pronounce.json")
-    private val _list = MutableStateFlow(load())
+    private val _list = MutableStateFlow(load().also(::sync))
     val list: StateFlow<List<Pronounce.Fix>> = _list
 
     private fun load(): List<Pronounce.Fix> = runCatching {
@@ -23,7 +23,14 @@ class Pronunciations(ctx: Context) {
         val a = JSONArray()
         for (f in l) a.put(JSONObject().put("word", f.word).put("say", f.sayAs))
         file.writeText(a.toString())
+        sync(l)
         _list.value = l
+    }
+
+    /** Fixes picked by ear are IPA: they go to the lexicon step, where prefixes (ו, ב, ל…) are read right. */
+    private fun sync(l: List<Pronounce.Fix>) {
+        com.karianoot.engine.Lexicon.setUser(l.filter { com.karianoot.engine.Lexicon.isIpa(it.sayAs) }
+            .associate { it.word.replace('׳', '\'') to it.sayAs })
     }
 
     fun add(word: String, sayAs: String) {

@@ -103,13 +103,13 @@ class KarianootApp : Application() {
         return if (text.trimEnd().endsWith(line)) text else text.trimEnd() + "\n" + line
     }
 
-    fun narrate(text: String, voice: VoiceInfo, opt: BlueTts.Options, targetSeconds: Float = 0f) {
+    fun narrate(text: String, voice: VoiceInfo, opt: BlueTts.Options, targetSeconds: Float = 0f, voice2: VoiceInfo? = null) {
         if (_job.value.busy) return
         _job.value = JobState(busy = true, stage = "מתחיל…", startedAt = System.currentTimeMillis())
         ContextCompat.startForegroundService(this, Intent(this, NarrationService::class.java))
         scope.launch {
             runCatching {
-                speech.speak(withClosing(text), voice, opt, targetSeconds, studioAlways) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
+                speech.speak(withClosing(text), voice, opt, targetSeconds, studioAlways, voice2) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
             }.onSuccess { c -> autoPlayPending.value = autoPlay; _job.value = JobState(result = c) }
                 .onFailure { e -> _job.value = JobState(error = if (speech.wasCancelled()) "הקריינות בוטלה" else e.message ?: e.toString()) }
         }
@@ -152,7 +152,8 @@ class KarianootApp : Application() {
 
     fun redoPart(c: Creation, i: Int, done: (Creation?) -> Unit) {
         if (redoing.value != null || _job.value.busy) return
-        val voice = (Catalog.voices + voices.custom.value).map(voiceOrder::named).firstOrNull { it.id == c.voiceId } ?: return done(null)
+        val id = c.parts.getOrNull(i)?.voice?.ifEmpty { null } ?: c.voiceId
+        val voice = (Catalog.voices + voices.custom.value).map(voiceOrder::named).firstOrNull { it.id == id } ?: return done(null)
         redoing.value = c.file to i
         scope.launch {
             val r = runCatching { speech.redoPart(c, i, voice) }.getOrNull()

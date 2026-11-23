@@ -206,9 +206,9 @@ class VideoMaker(private val ctx: Context) {
         val font: Typeface = runCatching { Typeface.create(ResourcesCompat.getFont(ctx, R.font.rubik), 800, false) }.getOrDefault(Typeface.DEFAULT_BOLD)
         val images: List<Bitmap> = style.images.mapNotNull { load(it) }
         val seconds = audio.size.toFloat() / rate + TAIL
-        val fill = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font; textSize = 84 * k; color = Color.WHITE; setShadowLayer(18 * k, 0f, 6 * k, Color.argb(200, 0, 0, 0)) }
-        val stroke = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font; textSize = 84 * k; color = Color.argb(235, 10, 8, 4); setStyle(Paint.Style.STROKE); strokeWidth = 14 * k; strokeJoin = Paint.Join.ROUND }
-        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font; textSize = 76 * k; setShadowLayer(14 * k, 0f, 4 * k, Color.BLACK) }
+        val fill = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font; fontVariationSettings = "'wght' 800"; textSize = 94 * k; color = Color.WHITE; setShadowLayer(18 * k, 0f, 6 * k, Color.argb(200, 0, 0, 0)) }
+        val stroke = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font; fontVariationSettings = "'wght' 800"; textSize = 94 * k; color = Color.argb(235, 10, 8, 4); setStyle(Paint.Style.STROKE); strokeWidth = 14 * k; strokeJoin = Paint.Join.ROUND }
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = font; fontVariationSettings = "'wght' 800"; textSize = 80 * k; setShadowLayer(14 * k, 0f, 4 * k, Color.BLACK) }
         val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         val shade = Paint().apply { shader = LinearGradient(0f, h * 0.35f, 0f, h.toFloat(), Color.TRANSPARENT, Color.argb(215, 0, 0, 0), Shader.TileMode.CLAMP) }
         val topShade = Paint().apply { shader = LinearGradient(0f, 0f, 0f, h * 0.25f, Color.argb(170, 0, 0, 0), Color.TRANSPARENT, Shader.TileMode.CLAMP) }

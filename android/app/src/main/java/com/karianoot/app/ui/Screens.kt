@@ -188,6 +188,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     val text = field.text
     fun setText(t: String) { field = androidx.compose.ui.text.input.TextFieldValue(t, androidx.compose.ui.text.TextRange(t.length)) }
     var effectsOpen by remember { mutableStateOf(false) }
+    var readingOpen by remember { mutableStateOf(false) }
     val custom by app.voices.custom.collectAsState()
     val cloning by app.cloning.collectAsState()
     var newVoice by remember { mutableStateOf(false) }
@@ -229,6 +230,11 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var target by remember { mutableFloatStateOf(prefs.getFloat("target", 58f)) }
     LaunchedEffect(fit, target) { prefs.edit().putBoolean("fit", fit).putFloat("target", target).apply() }
     var persona by remember { mutableStateOf(prefs.getString("persona", null)) }
+    // Two-voice scripts ("א:" / "ב:" lines): the second voice.
+    var voice2Id by remember { mutableStateOf(prefs.getString("voice2", null)) }
+    LaunchedEffect(voice2Id) { prefs.edit().putString("voice2", voice2Id).apply() }
+    val dialogue = com.karianoot.engine.Script.isDialogue(text)
+    val voice2 = if (dialogue) ready.firstOrNull { it.id == voice2Id } ?: ready.firstOrNull { it.id != voice?.id } else null
     LaunchedEffect(persona) { prefs.edit().putString("persona", persona).apply() }
     val busy = job.busy
     val last = job.result
@@ -303,9 +309,12 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 SoftButton("תבניות ופתיחים", Modifier.weight(1f), icon = Icons.Rounded.AutoAwesome) { templatesOpen = true }
                 SoftButton("אפקט / הפסקה", Modifier.weight(1f), icon = Icons.Rounded.MusicNote) { effectsOpen = true }
             }
+            SoftButton("איך זה ייקרא? (בדיקת הגייה)", Modifier.fillMaxWidth(), icon = Icons.Rounded.RecordVoiceOver,
+                enabled = text.isNotBlank() && g2pReady && !busy) { readingOpen = true }
             if (app.responsible) Text("בסוף תיקרא השורה: \"${app.responsibleLine}\" (אפשר לשנות בהגדרות)", color = C.Faint, fontSize = 12.sp, lineHeight = 17.sp)
         }
-        if (templatesOpen) TemplatesDialog(app, current = text, onPick = { t -> setText(if (text.isBlank()) t else text.trimEnd() + " " + t) }) { templatesOpen = false }
+        if (templatesOpen) TemplatesDialog(app, current = text, onPick = { t -> setText(if (text.isBlank()) t else text.trimEnd() + (if (t.startsWith("א:")) "\n" else " ") + t) }) { templatesOpen = false }
+        if (readingOpen) ReadingDialog(app, text, voice) { readingOpen = false }
         if (effectsOpen) EffectsDialog(app, onInsert = { m -> field = insertAtCursor(field, m) }) { effectsOpen = false }
         // Text from outside: a share, "קריינות" in the text-selection menu, or "הדבקה וקריינות" (which also starts it).
         val incoming by app.incoming.collectAsState()
@@ -367,6 +376,15 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 Icon(Icons.Rounded.WarningAmber, null, tint = C.Amber, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("קול לשימוש אישי בלבד: זכויות הקול לא ברורות. לא להכניס לאפליקציה שנמכרת.", color = C.Amber, fontSize = 12.sp)
+            }
+        }
+
+        if (dialogue) Section(title = "שני קולות") {
+            Text("שורות שמתחילות ב-א: נאמרות ב\"${voice?.name ?: "הקול שבחרתם"}\", ושורות שמתחילות ב-ב: בקול השני. " +
+                "קולות מאותו מודל = הכי מהיר.", color = C.Faint, fontSize = 12.sp, lineHeight = 17.sp)
+            Text("הקול השני (ב:)", color = C.Gold, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for (v in app.voiceOrder.arrange(ready) { it.id }) VoiceChip(v, v.id == voice2?.id) { voice2Id = v.id }
             }
         }
 
@@ -433,7 +451,7 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
             com.karianoot.engine.Script.unknown(text).firstOrNull()?.let {
                 Toast.makeText(ctx, "לא מכיר את הסימון $it. אפשר להוסיף אפקט או הפסקה מהכפתור \"אפקט / הפסקה\".", Toast.LENGTH_LONG).show(); return@GoldButton
             }
-            app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive), if (fit) target else 0f)
+            app.narrate(text, v, BlueTts.Options(steps = v.steps[quality], speed = speed, silence = pause, temperature = alive), if (fit) target else 0f, voice2)
         }
     }
     }
@@ -583,7 +601,9 @@ private fun PronounceDialog(app: KarianootApp, close: () -> Unit) {
                     app.pronounce.add(word, say); word = ""; say = ""
                 }
                 for (f in list) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${f.word}  ←  ${f.sayAs}", color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    if (com.karianoot.engine.Lexicon.isIpa(f.sayAs)) Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${f.word}  ←  ", color = C.Text, fontSize = 15.sp); ReadingText(f.sayAs, 15)
+                    } else Text("${f.word}  ←  ${f.sayAs}", color = C.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
                     Icon(Icons.Rounded.Delete, "מחיקה", tint = C.Sub, modifier = Modifier.size(22.dp).pressable { app.pronounce.remove(f) })
                 }
             }
@@ -623,7 +643,8 @@ private fun NewVoiceDialog(app: KarianootApp, states: Map<String, ModelState>, o
                         textStyle = TextStyle(color = C.Text, fontSize = 16.sp, fontFamily = Rubik), cursorBrush = SolidColor(C.Gold), singleLine = true)
                 }
                 Segmented(listOf("קול של גבר", "קול של אישה"), female) { female = it }
-                SoftButton(if (uri == null) "בחירת קובץ הקלטה" else "✓ נבחר קובץ (להחלפה)", Modifier.fillMaxWidth(), icon = Icons.Rounded.AudioFile) {
+                RecordNow(onDone = { uri = it; ownVoice = true })
+                SoftButton(if (uri == null) "או: בחירת קובץ הקלטה" else "✓ יש הקלטה (להחלפה מקובץ)", Modifier.fillMaxWidth(), icon = Icons.Rounded.AudioFile) {
                     pick.launch(arrayOf("audio/*"))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {

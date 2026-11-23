@@ -14,7 +14,8 @@ object Pronounce {
         var out = text
         for (f in fixes.sortedByDescending { it.word.length }) {
             val w = HebrewG2P.stripNiqqud(f.word.trim())
-            if (w.isEmpty() || f.sayAs.isBlank()) continue
+            // Fixes picked by ear are IPA and go in at the lexicon step (Lexicon.setUser), with the prefixes read right.
+            if (w.isEmpty() || f.sayAs.isBlank() || Lexicon.isIpa(f.sayAs)) continue
             val re = Regex("(?<![$HEB])([ובהלמשכ]{0,3})${Regex.escape(w)}(?![$HEB])")
             out = re.replace(out) { m -> m.groupValues[1] + f.sayAs.trim() }
         }
