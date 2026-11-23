@@ -316,9 +316,6 @@ class Speech(private val ctx: Context, private val models: Models, private val f
     /** One spoken word: what is shown, and the IPA the voice gets. */
     data class Reading(val word: String, val ipa: String)
 
-    private val SENTENCES = Regex("(?<=[.!?…])\\s+|\\n+")
-    private val PUNCT = Regex("[.,!?…:;\"()\\[\\]״]+")
-
     /**
      * "איך זה ייקרא": the text through the app's own path (the user's fixes, the football cleanup, the lexicon, the G2P),
      * per sentence, word by word. A sentence whose words cannot be paired with its IPA comes back as one item.
@@ -327,18 +324,16 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         lock.withLock {
             val g = loadG2p { _, _ -> }
             val clean = Script.MARKER.replace(text, " ")
-            TextPrep.apply(Pronounce.apply(clean, fixes())).split(SENTENCES).map { it.trim() }.filter { it.isNotEmpty() }.map { s ->
+            TextPrep.apply(Pronounce.apply(clean, fixes())).split(com.karianoot.engine.Readings.SENTENCES).map { it.trim() }.filter { it.isNotEmpty() }.map { s ->
                 val ipa = BlueTts.toIpa(g, s)
-                val words = com.karianoot.engine.HebrewNumbers.normalize(s).split(Regex("\\s+")).map { it.replace(PUNCT, "") }.filter { w -> w.any { it.isLetterOrDigit() } }
-                val ipas = ipa.split(Regex("\\s+")).map { it.replace(PUNCT, "") }.filter { w -> w.any { it.isLetter() } }
-                if (words.size == ipas.size) words.zip(ipas) { w, i -> Reading(w, i) } else listOf(Reading(s, ipas.joinToString(" ")))
+                com.karianoot.engine.Readings.pair(s, ipa)?.map { (w, i) -> Reading(w, i) } ?: listOf(Reading(s, com.karianoot.engine.Readings.clean(ipa)))
             }
         }
     }
 
     /** IPA of a spelling the user typed ("כמו שזה נשמע" or with niqqud). */
     suspend fun ipaOf(text: String): String = withContext(Dispatchers.Default) {
-        lock.withLock { BlueTts.toIpa(loadG2p { _, _ -> }, text).replace(PUNCT, "").trim() }
+        lock.withLock { com.karianoot.engine.Readings.clean(BlueTts.toIpa(loadG2p { _, _ -> }, text)) }
     }
 
     /** [ipa] said by [voice], as a playable file. */
