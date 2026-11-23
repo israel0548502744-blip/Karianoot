@@ -467,6 +467,32 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         n
     }
 
+    /** One sentence of a narration as the recognizer heard it, and the words it missed. */
+    data class Check(val index: Int, val text: String, val heard: String, val missed: List<com.karianoot.engine.Proofread.Miss>)
+
+    /**
+     * "בדיקת הקריינות": every sentence of [c] through the Hebrew recognizer on the phone (whisper.cpp + ivrit-ai), compared
+     * with what it should say (as tools/proof does on CI). The recognizer is loaded for the check and freed after it.
+     */
+    suspend fun check(c: Creation, onProgress: (Float) -> Unit): List<Check> = withContext(Dispatchers.Default) {
+        lock.withLock {
+            // One big model in memory at a time.
+            tts?.close(); tts = null; ttsModel = null; qwen?.close(); qwen = null; magpie?.close(); magpie = null
+            val (audio, rate) = Wav.read(c.file)
+            val parts = c.parts.ifEmpty { listOf(PartSpan(c.text, 0, audio.size)) }
+            com.karianoot.engine.WhisperAsr(File(models.dir(Catalog.proof), Catalog.PROOF_FILE).path,
+                threads = Runtime.getRuntime().availableProcessors().coerceIn(4, 8)).use { asr ->
+                parts.mapIndexed { i, p ->
+                    onProgress(i.toFloat() / parts.size)
+                    val a = p.start.coerceIn(0, audio.size); val b = p.end.coerceIn(a, audio.size)
+                    val heard = asr.hear(audio.copyOfRange(a, b), rate)
+                    val said = com.karianoot.engine.HebrewNumbers.normalize(com.karianoot.engine.Captions.display(p.text))
+                    Check(i, p.text, heard, com.karianoot.engine.Proofread.missed(said, heard))
+                }.also { onProgress(1f) }
+            }
+        }
+    }
+
     /** Word-by-word captions of [c] (from its sentence times; the whole text over the whole file when there are none). */
     fun captions(c: Creation): List<com.karianoot.engine.Captions.Card> {
         val (audio, rate) = Wav.read(c.file)

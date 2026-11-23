@@ -172,6 +172,20 @@ object Catalog {
         ),
     )
 
+    /**
+     * "בדיקת הקריינות": ivrit-ai's Hebrew whisper (Apache-2.0) on whisper.cpp, quantized, in models-v1 (whisper-jni.yml).
+     * Not offered until the phone file is hosted and checked ([downloadable]); the check button hides itself until then.
+     */
+    const val PROOF_FILE = "whisper-he.bin"
+    val proof = ModelInfo(
+        id = "proof", kind = ModelKind.SOON,
+        title = "בודק הקריינות",
+        subtitle = "מקשיב לקריינות ומסמן מילים שכדאי לשמוע שוב. בלי אינטרנט.",
+        repo = "ivrit-ai/whisper-large-v3-turbo-ggml", revision = "",
+        license = "Apache-2.0", credit = "ivrit.ai · whisper.cpp — Georgi Gerganov (MIT)",
+        files = emptyList(),
+    )
+
     val downloadable = listOf(g2p, magpie, qwen, blue25, blueV3, clone, ocr)
     val all = downloadable + soon
 

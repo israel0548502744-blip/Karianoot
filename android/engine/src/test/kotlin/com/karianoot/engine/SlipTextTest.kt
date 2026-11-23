@@ -28,16 +28,17 @@ class SlipTextTest {
         assertTrue(s, s.contains("ביחס כולל של 19.99"))
     }
 
-    @Test fun mergesTheTwoPasses() {
+    @Test fun rereadsNumbersFromTheirBoxes() {
         val heb = """<div class='ocr_page'><span class='ocr_line' id='l1' title="bbox 100 100 900 150">
             <span class='ocrx_word' id='w1' title='bbox 700 100 900 150; x_wconf 92'>ארסנל</span>
             <span class='ocrx_word' id='w2' title='bbox 650 100 680 150; x_wconf 90'>-</span>
             <span class='ocrx_word' id='w3' title='bbox 400 100 620 150; x_wconf 85'>צ&#39;לסי</span></span>
             <span class='ocr_line' id='l2' title="bbox 100 200 900 250">
-            <span class='ocrx_word' id='w4' title='bbox 100 200 300 250; x_wconf 40'>בםסםסם</span></span></div>"""
-        val dig = """<span class='ocr_line' title="bbox 100 200 900 250"><span class='ocrx_word' title='bbox 850 205 880 245; x_wconf 91'>1</span>
-            <span class='ocrx_word' title='bbox 100 205 200 245; x_wconf 93'>2.10</span></span>"""
-        val text = SlipText.merge(SlipText.hocrWords(heb), SlipText.hocrWords(dig))
+            <span class='ocrx_word' id='w4' title='bbox 850 200 880 250; x_wconf 40'>י</span>
+            <span class='ocrx_word' id='w5' title='bbox 100 200 300 250; x_wconf 40'>בםסםסם</span></span></div>"""
+        val ws = SlipText.hocrWords(heb)
+        assertEquals(5, ws.size)
+        val text = SlipText.text(ws) { w -> if (w.x == 850) "1" else "2.10" }
         assertEquals("ארסנל - צ'לסי\n1 2.10", text)
         val p = SlipText.parse(text)
         assertEquals("ניצחון ארסנל", p.single().pick); assertEquals(2.10f, p.single().odds!!, 1e-4f)

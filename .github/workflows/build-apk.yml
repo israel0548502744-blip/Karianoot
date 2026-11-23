@@ -54,5 +54,12 @@ jobs:
           TAG: apk-${{ github.run_number }}
         run: |
           printf 'להתקנה: להוריד את Karianoot.apk לטלפון ולפתוח (לאשר התקנה ממקורות לא ידועים).\nהמודלים יורדים מתוך האפליקציה, פעם אחת.\nBuilt from %s @ %s.\n' "${{ github.ref_name }}" "${{ github.sha }}" > notes.txt
+          # GitHub refuses (403) a tag made by this workflow's token at a commit when workflow files changed since the last
+          # tagged release; then the tag goes on the last release's commit (the APK is still this build, see the notes).
           gh release create "$TAG" Karianoot.apk --target "${{ github.sha }}" --title "קריינות - גרסה ${{ github.run_number }}" \
-            --notes-file notes.txt --latest
+            --notes-file notes.txt --latest || {
+            PREV=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" -q .target_commitish)
+            echo "::warning::tag at ${{ github.sha }} refused; tagging $PREV (last release's commit) instead"
+            gh release create "$TAG" Karianoot.apk --target "$PREV" --title "קריינות - גרסה ${{ github.run_number }}" \
+              --notes-file notes.txt --latest
+          }

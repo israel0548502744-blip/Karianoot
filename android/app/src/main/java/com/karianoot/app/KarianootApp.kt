@@ -261,6 +261,19 @@ class KarianootApp : Application() {
         }
     }
 
+    /** "בדיקת הקריינות" running: (recording, progress), or null. */
+    val checking = MutableStateFlow<Pair<java.io.File, Float>?>(null)
+
+    fun checkNarration(c: Creation, done: (List<Speech.Check>?, String?) -> Unit) {
+        if (checking.value != null || _job.value.busy) return
+        checking.value = c.file to 0f
+        scope.launch {
+            val r = runCatching { speech.check(c) { p -> checking.value = c.file to p } }
+            checking.value = null
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(r.getOrNull(), r.exceptionOrNull()?.let { it.message ?: it.toString() }) }
+        }
+    }
+
     /** The video being made: (recording, progress 0..1), or null. */
     val video = MutableStateFlow<Pair<java.io.File, Float>?>(null)
     @Volatile private var videoCancel = false

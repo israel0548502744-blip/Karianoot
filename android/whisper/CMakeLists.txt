@@ -1,0 +1,37 @@
+# libwhisperjni.so: whisper.cpp (MIT) + the JNI bridge, self-contained (its own ggml, linked statically, hidden).
+# The app also loads libmagpiejni / libqwenjni, each with its own ggml: hidden visibility + a version script keep them apart.
+cmake_minimum_required(VERSION 3.16)
+project(karianoot_whisper C CXX)
+
+set(WHISPER_SRC "" CACHE PATH "whisper.cpp checkout (pinned)")
+option(WHISPER_JNI_HOST "Build for the host JVM (JNI headers from the JDK)" OFF)
+if(NOT EXISTS "${WHISPER_SRC}/CMakeLists.txt")
+    message(FATAL_ERROR "WHISPER_SRC must point at a whisper.cpp checkout")
+endif()
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_C_VISIBILITY_PRESET hidden)
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+add_compile_options(-ffunction-sections -fdata-sections)
+
+set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${WHISPER_SRC}" whisper EXCLUDE_FROM_ALL)
+
+add_library(whisperjni SHARED whisper_jni.cpp)
+target_link_libraries(whisperjni PRIVATE whisper)
+if(WHISPER_JNI_HOST)
+    find_package(JNI REQUIRED)
+    target_include_directories(whisperjni PRIVATE ${JNI_INCLUDE_DIRS})
+endif()
+if(ANDROID)
+    target_link_libraries(whisperjni PRIVATE log)
+endif()
+set(_map "${CMAKE_CURRENT_BINARY_DIR}/whisperjni.map")
+file(WRITE "${_map}" "{\n  global: Java_com_karianoot_engine_WhisperNative_*;\n  local: *;\n};\n")
+target_link_options(whisperjni PRIVATE "-Wl,--version-script=${_map}" "-Wl,--exclude-libs,ALL" "-Wl,--gc-sections")
+set_target_properties(whisperjni PROPERTIES LINK_DEPENDS "${_map}")

@@ -88,26 +88,22 @@ object SlipText {
 
     private val FINAL_INSIDE = Regex("[ךםןףץ](?=[\\u05D0-\\u05EA])")
 
-    /** A Hebrew-pass word that is really a misread number or noise. */
-    fun garbage(t: String) = FINAL_INSIDE.containsMatchIn(t) ||
+    /**
+     * A Hebrew-pass word that is really something else: a number the Hebrew model turned into letters (a final letter
+     * inside a word, Latin/digit noise) or a lone letter (a "1" or "X" pick). It is read again, digits only, from its box.
+     */
+    fun needsDigits(t: String) = FINAL_INSIDE.containsMatchIn(t) || (t.length == 1 && t[0].isLetter()) ||
         (Regex("[A-Za-z0-9]").containsMatchIn(t) && !Regex("[\\u05D0-\\u05EA'׳\"״\\-]+").matches(t))
 
     /**
-     * The Hebrew pass gives the words (its digits are garbage: Hebrew models read digits as letters); a digits-only pass
-     * gives the numbers. Each number joins the Hebrew line it sits on; numbers on no line become their own lines.
+     * The words of the Hebrew pass, with every [needsDigits] word replaced by what [reread] reads in its box (digits only;
+     * null or not digits = dropped), as lines top to bottom, right to left.
      */
-    fun merge(heb: List<OcrWord>, digits: List<OcrWord>): String {
-        val rows = ArrayList<Pair<Int, String>>()
-        val used = HashSet<Int>()
-        for ((_, ws) in heb.groupBy { it.line }) {
-            val top = ws.minOf { it.y }; val bottom = ws.maxOf { it.y + it.h }; val h = bottom - top
-            val words = ws.sortedByDescending { it.x }.map { it.text }.filterNot(::garbage)
-            val nums = digits.withIndex().filter { (_, d) -> d.conf > 50 && d.y + d.h / 2f in (top - 0.3f * h)..(bottom + 0.3f * h) }
-            nums.forEach { used.add(it.index) }
-            val line = (words + nums.sortedByDescending { it.value.x }.map { it.value.text }).joinToString(" ")
-            if (line.isNotBlank()) rows.add(top to line)
+    fun text(words: List<OcrWord>, reread: (OcrWord) -> String?): String {
+        val fixed = words.mapNotNull { w ->
+            if (!needsDigits(w.text)) w else reread(w)?.trim()?.takeIf { Regex("[0-9.,X]+").matches(it) }?.let { w.copy(text = it) }
         }
-        digits.forEachIndexed { i, d -> if (i !in used && d.conf > 50) rows.add(d.y to d.text) }
-        return rows.sortedBy { it.first }.joinToString("\n") { it.second }
+        return fixed.groupBy { it.line }.values.sortedBy { ws -> ws.minOf { it.y } }
+            .joinToString("\n") { ws -> ws.sortedByDescending { it.x }.joinToString(" ") { it.text } }
     }
 }

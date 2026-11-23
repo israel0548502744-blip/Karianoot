@@ -754,6 +754,16 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
     if (shareOpen) ShareDialog(c) { shareOpen = false }
     var videoOpen by remember(c) { mutableStateOf(false) }
     if (videoOpen) VideoDialog(app, c) { videoOpen = false }
+    var checkOpen by remember(c) { mutableStateOf(false) }
+    var checkResult by remember(c) { mutableStateOf<List<Speech.Check>?>(null) }
+    val modelStates by app.models.states.collectAsState()
+    if (checkOpen) CheckDialog(app, c, checkResult, onRedo = { i ->
+        app.redoPart(c, i) { n ->
+            if (n == null) Toast.makeText(ctx, "לא הצלחתי ליצור מחדש", Toast.LENGTH_SHORT).show()
+            else { val k = history.indexOfFirst { it.file == c.file }; if (k >= 0) history[k] = n
+                Toast.makeText(ctx, "משפט ${i + 1} נוצר מחדש ✨", Toast.LENGTH_SHORT).show() }
+        }
+    }) { checkOpen = false }
     if (musicOpen) PolishDialog(app, c, onMake = { p ->
         musicOpen = false
         Toast.makeText(ctx, "מעבד את הסאונד…", Toast.LENGTH_SHORT).show()
@@ -812,6 +822,17 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
         }
         GoldButton("סרטון עם כתוביות לטיקטוק", Modifier.fillMaxWidth(), icon = Icons.Rounded.Movie) { if (playing) { player.pause(); playing = false }; videoOpen = true }
         SoftButton("עריכת סאונד: אולפן, מוזיקה, אפקטים", Modifier.fillMaxWidth(), icon = Icons.Rounded.MusicNote) { musicOpen = true }
+        if (Catalog.proof in Catalog.downloadable) SoftButton("בדיקת הקריינות: הטלפון מקשיב ומסמן מילים", Modifier.fillMaxWidth(), icon = Icons.Rounded.RecordVoiceOver) {
+            if (modelStates[Catalog.proof.id] != ModelState.Ready) {
+                Toast.makeText(ctx, "מורידים פעם אחת את \"בודק הקריינות\" במסך המודלים", Toast.LENGTH_LONG).show(); return@SoftButton
+            }
+            if (playing) { player.pause(); playing = false }
+            checkResult = null; checkOpen = true
+            app.checkNarration(c) { r, err ->
+                checkResult = r
+                if (err != null) { checkOpen = false; Toast.makeText(ctx, "הבדיקה נכשלה: $err", Toast.LENGTH_LONG).show() }
+            }
+        }
         if (c.parts.size > 1 && c.voiceId.isNotEmpty())
             SoftButton(if (showParts) "סגירת תיקון משפטים" else "משפט יצא לא טוב? תיקון משפט", Modifier.fillMaxWidth(), icon = Icons.Rounded.Tune,
                 color = if (showParts) C.Gold else C.Text) { showParts = !showParts }

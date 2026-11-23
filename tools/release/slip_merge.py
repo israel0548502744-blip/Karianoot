@@ -1,52 +1,39 @@
 #!/usr/bin/env python3
-"""The app's slip-reading recipe, on the CLI (ocr-probe.yml): a Hebrew pass for the words and a digits-only English pass
-for the numbers (Hebrew models turn digits into letters), merged line by line by position.
+"""The app's slip-reading recipe on the CLI (ocr-probe.yml), as SlipReader.kt does it with TessBaseAPI.setRectangle:
+a Hebrew pass for the words; every word it could not read as Hebrew (a number turned into letters, a lone letter for
+"1" / "X") is read again alone, digits only, from its own box.
 
-Usage: slip_merge.py <heb.tsv> <digits.tsv>  -> prints the merged text
+Usage: slip_merge.py <image> <heb.tsv> <tessdata dir>  -> prints the text
 """
-import re, sys
+import re, subprocess, sys, tempfile
+from PIL import Image
 
-
-def words(tsv):
-    out = []
-    for line in open(tsv, encoding="utf-8").read().splitlines()[1:]:
-        f = line.split("\t")
-        if len(f) < 12 or f[0] != "5" or not f[11].strip():
-            continue
-        x, y, w, h, conf = int(f[6]), int(f[7]), int(f[8]), int(f[9]), float(f[10])
-        out.append({"key": (f[2], f[3], f[4]), "x": x, "y": y, "w": w, "h": h, "conf": conf, "text": f[11].strip()})
-    return out
-
-
+img, tsv, tessdata = sys.argv[1:4]
 FINAL_INSIDE = re.compile("[ךםןףץ](?=[א-ת])")
 
 
-def garbage(t):
-    """A Hebrew-pass token that is really a misread number or noise."""
-    if FINAL_INSIDE.search(t):
+def needs_digits(t):
+    if FINAL_INSIDE.search(t) or (len(t) == 1 and t.isalpha()):
         return True
-    if re.search(r"[A-Za-z0-9]", t) and not re.fullmatch(r"[א-ת'׳\"״\-]+", t):
-        return True
-    return False
+    return bool(re.search(r"[A-Za-z0-9]", t)) and not re.fullmatch(r"[א-ת'׳\"״\-]+", t)
 
 
-heb, dig = words(sys.argv[1]), words(sys.argv[2])
+im = Image.open(img)
 lines = {}
-for w in heb:
-    lines.setdefault(w["key"], []).append(w)
-used = set()
-rows = []
-for key, ws in lines.items():
-    top = min(w["y"] for w in ws); bottom = max(w["y"] + w["h"] for w in ws)
-    text = [w["text"] for w in sorted(ws, key=lambda w: -w["x"]) if not garbage(w["text"])]
-    h = bottom - top
-    nums = [d for i, d in enumerate(dig) if d["conf"] > 50 and top - 0.3 * h <= d["y"] + d["h"] / 2 <= bottom + 0.3 * h]
-    for d in nums:
-        used.add(id(d))
-    rows.append((top, " ".join(text + [d["text"] for d in sorted(nums, key=lambda d: -d["x"])])))
-for d in dig:
-    if id(d) not in used and d["conf"] > 50:
-        rows.append((d["y"], d["text"]))
-for _, t in sorted(rows):
-    if t.strip():
-        print(t)
+for row in open(tsv, encoding="utf-8").read().splitlines()[1:]:
+    f = row.split("\t")
+    if len(f) < 12 or f[0] != "5" or not f[11].strip():
+        continue
+    x, y, w, h = map(int, f[6:10])
+    t = f[11].strip()
+    if needs_digits(t):
+        pad = max(4, h // 4)
+        with tempfile.NamedTemporaryFile(suffix=".png") as crop:
+            im.crop((max(0, x - pad), max(0, y - pad), x + w + pad, y + h + pad)).save(crop.name)
+            out = subprocess.run(["tesseract", crop.name, "-", "--tessdata-dir", tessdata, "-l", "eng", "--psm", "7",
+                                  "-c", "tessedit_char_whitelist=0123456789.,X"], capture_output=True, text=True).stdout.strip()
+        t = out if re.fullmatch(r"[0-9.,X]+", out or "") else ""
+    if t:
+        lines.setdefault((f[2], f[3], f[4]), []).append((x, y, t))
+for key, ws in sorted(lines.items(), key=lambda kv: min(w[1] for w in kv[1])):
+    print(" ".join(t for _, _, t in sorted(ws, key=lambda w: -w[0])))

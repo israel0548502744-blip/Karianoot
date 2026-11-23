@@ -22,28 +22,27 @@ object SlipReader {
         val src = ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: error("לא הצלחתי לפתוח את התמונה")
         val prepared = prepare(src)
         if (prepared !== src) src.recycle()
+        val heb = TessBaseAPI()
+        val dig = TessBaseAPI()
         try {
-            // A Hebrew pass for the words, then a digits-only pass for the numbers (Hebrew models read digits as letters);
-            // SlipText.merge puts each number on the line it sits on.
-            val heb = pass(modelDir, prepared, "heb", TessBaseAPI.PageSegMode.PSM_SINGLE_BLOCK, null)
-            val dig = pass(modelDir, prepared, "eng", TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT, "0123456789.,X")
-            return SlipText.merge(SlipText.hocrWords(heb), SlipText.hocrWords(dig))
+            // The Hebrew pass reads the words (its digits come out as letters); every word that is not Hebrew is read again,
+            // digits only, from its own box (SlipText.text). The same recipe is tested on the CLI in ocr-probe.yml.
+            check(heb.init(modelDir.path, "heb") && dig.init(modelDir.path, "eng")) { "מנוע זיהוי הטקסט לא נטען" }
+            heb.setPageSegMode(TessBaseAPI.PageSegMode.PSM_SINGLE_BLOCK)
+            heb.setImage(prepared)
+            val words = SlipText.hocrWords(heb.getHOCRText(0) ?: "")
+            dig.setPageSegMode(TessBaseAPI.PageSegMode.PSM_SINGLE_LINE)
+            dig.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, "0123456789.,X")
+            dig.setImage(prepared)
+            return SlipText.text(words) { w ->
+                val pad = maxOf(4, w.h / 4)
+                dig.setRectangle(maxOf(0, w.x - pad), maxOf(0, w.y - pad), minOf(prepared.width - maxOf(0, w.x - pad), w.w + 2 * pad),
+                    minOf(prepared.height - maxOf(0, w.y - pad), w.h + 2 * pad))
+                dig.getUTF8Text()
+            }
         } finally {
+            heb.recycle(); dig.recycle()
             prepared.recycle()
-        }
-    }
-
-    /** One Tesseract pass -> its hOCR (words with boxes and confidence). Tesseract wants the folder that holds "tessdata/". */
-    private fun pass(modelDir: File, b: Bitmap, lang: String, psm: Int, whitelist: String?): String {
-        val api = TessBaseAPI()
-        try {
-            check(api.init(modelDir.path, lang)) { "מנוע זיהוי הטקסט לא נטען" }
-            api.setPageSegMode(psm)
-            if (whitelist != null) api.setVariable(TessBaseAPI.VAR_CHAR_WHITELIST, whitelist)
-            api.setImage(b)
-            return api.getHOCRText(0) ?: ""
-        } finally {
-            api.recycle()
         }
     }
 
