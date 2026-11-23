@@ -1124,10 +1124,28 @@ object Lexicon {
     }
 
     // The prefix is matched lazily, so a whole-word key ("בואן") wins over a prefix + a shorter key (ב + "ואן").
-    private val PATTERN = Regex(
-        "(?<![$HEB'])([$PREFIX_LETTERS]{0,2}?)-?(" + WORDS.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
+    private fun pattern(keys: Collection<String>) = Regex(
+        "(?<![$HEB'])([$PREFIX_LETTERS]{0,2}?)-?(" + keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } +
             ")(?![$HEB'])"
     )
+
+    /** Names downloaded after the app was built (new players each transfer window); they win over [WORDS]. */
+    @Volatile private var extra: Map<String, String> = emptyMap()
+    @Volatile private var PATTERN = pattern(WORDS.keys)
+
+    /** Symbols an IPA entry may use (the G2P's own, plus what MagpieTts.clean maps). */
+    private val IPA_OK = Regex("[abdefhijklmnoprstuvzɡʁʃʔχˈʒw ]+")
+    private val KEY_OK = Regex("[\\u05D0-\\u05EA' ]{2,40}")
+
+    /** Sets the downloaded names; entries with anything but Hebrew letters (key) / the G2P's IPA symbols (value) are skipped. Returns how many were taken. */
+    fun setExtra(words: Map<String, String>): Int {
+        val ok = words.filter { (k, v) -> KEY_OK.matches(k) && IPA_OK.matches(v) && v.contains('ˈ') }
+        extra = ok
+        PATTERN = pattern(WORDS.keys + ok.keys)
+        return ok.size
+    }
+
+    fun extraCount() = extra.size
 
     /** [token] is a protected word, maybe behind one or two prefix letters of its own. */
     private fun isProtected(token: String) =
@@ -1137,7 +1155,7 @@ object Lexicon {
         val t = text.replace('׳', '\'')
         return PATTERN.replace(t) { m ->
             if (isProtected(m.value)) return@replace m.value
-            val pre = prefix(m.groupValues[1]); val ipa = WORDS.getValue(m.groupValues[2])
+            val pre = prefix(m.groupValues[1]); val ipa = extra[m.groupValues[2]] ?: WORDS.getValue(m.groupValues[2])
             // A prefix before a vowel keeps a glottal stop, as the G2P reads "לאמבאפה": le-ʔembape.
             pre + (if (pre.isNotEmpty() && ipa.first() in "aeiou") "ʔ" else "") + ipa
         }

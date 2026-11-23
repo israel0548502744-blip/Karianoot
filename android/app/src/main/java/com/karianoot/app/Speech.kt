@@ -8,6 +8,10 @@ import com.karianoot.engine.BlueVoice
 import com.karianoot.engine.HebrewG2P
 import com.karianoot.engine.Joiner
 import com.karianoot.engine.MagpieTts
+import com.karianoot.engine.Master
+import com.karianoot.engine.Script
+import com.karianoot.engine.Sfx
+import com.karianoot.engine.TimeStretch
 import com.karianoot.engine.Pronounce
 import com.karianoot.engine.QwenTts
 import com.karianoot.engine.TextPrep
@@ -29,6 +33,14 @@ data class Creation(
     val temperature: Float = 1f,
     /** The sentence pause used (seconds), so a retake of one sentence fits back in the same way. */
     val pause: Float = 0f,
+    /** "סאונד אולפן" was applied ([Master.studio]); a retake of one sentence gets it too. */
+    val studio: Boolean = false,
+)
+
+/** What "עריכת סאונד" does to a narration (a new copy is made). */
+data class Polish(
+    val music: android.net.Uri? = null, val level: Float = 0.15f, val duck: Boolean = true,
+    val studio: Boolean = true, val intro: String? = null, val outro: String? = null,
 )
 
 /**
@@ -192,7 +204,12 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         lock.withLock { loadQwen { _, _ -> }.voicePrint(com.karianoot.engine.VoiceCloner.resample(clip, 44100, 24000)) }
     }
 
-    suspend fun speak(text: String, voice: VoiceInfo, opt: BlueTts.Options, onStage: (String, Float) -> Unit): Creation =
+    /**
+     * [text] -> a saved recording. Markers in braces ({הפסקה 2}, {שריקה}...) become pauses and sound effects
+     * ([Script]); [targetSeconds] > 0 stretches the result to that length (pitch kept); [studio] applies [Master.studio].
+     */
+    suspend fun speak(text: String, voice: VoiceInfo, opt: BlueTts.Options, targetSeconds: Float = 0f, studio: Boolean = false,
+                      onStage: (String, Float) -> Unit): Creation =
         withContext(Dispatchers.Default) {
             lock.withLock {
                 cancelled = false
@@ -200,15 +217,60 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 val stage = guard(onStage)
                 val engine = engineFor(voice, stage)
                 stage("מקריא…", 0.02f)
-                // The user's fixes first (they win), then the football-text cleanup (1X2, PSG, ת"א, scores).
-                val parts = engine.parts(TextPrep.apply(Pronounce.apply(text, fixes())), opt, onProgress = { p -> stage("מקריא…", p) })
-                val joined = join(parts, opt.silence, engine)
-                val wav = joined.samples
-                val spans = parts.mapIndexed { i, p -> PartSpan(p.text, joined.spans[i][0], joined.spans[i][1]) }
+                val segs = if (Script.hasMarkers(text)) Script.parse(text) else listOf(Script.Speech(text))
+                val total = segs.sumOf { (it as? Script.Speech)?.text?.length ?: 0 }.coerceAtLeast(1)
+                var done = 0
+                // Each stretch of speech is spoken and joined on its own; markers go between them.
+                val joined = segs.map { seg ->
+                    if (seg !is Script.Speech) null else {
+                        val from = done
+                        // The user's fixes first (they win), then the football-text cleanup (1X2, PSG, ת"א, scores).
+                        val ps = engine.parts(TextPrep.apply(Pronounce.apply(seg.text, fixes())), opt,
+                            onProgress = { p -> stage("מקריא…", (from + p * seg.text.length) / total) })
+                        done += seg.text.length
+                        ps to join(ps, opt.silence, engine)
+                    }
+                }
+                val rate = engine.sampleRate
+                val pauseSec = joined.firstNotNullOfOrNull { it?.second?.pauseSeconds } ?: engine.naturalPause
+                val out = ArrayList<FloatArray>()
+                val spans = ArrayList<PartSpan>()
+                var len = 0
+                fun add(a: FloatArray) { out.add(a); len += a.size }
+                fun gap(sec: Float) { if (sec > 0f) add(FloatArray((sec * rate).toInt())) }
+                segs.forEachIndexed { k, seg ->
+                    when (seg) {
+                        is Script.Speech -> {
+                            val (ps, j) = joined[k]!!
+                            if (k > 0 && segs[k - 1] is Script.Speech) gap(pauseSec)
+                            ps.forEachIndexed { i, p -> spans.add(PartSpan(p.text, len + j.spans[i][0], len + j.spans[i][1])) }
+                            add(j.samples)
+                        }
+                        is Script.Pause -> gap(seg.seconds)
+                        is Script.Effect -> {
+                            if (len > 0) gap(pauseSec / 2)
+                            add(Sfx.make(seg.name, rate))
+                            if (k < segs.size - 1) gap(pauseSec / 2)
+                        }
+                    }
+                }
+                var wav = FloatArray(len).also { a -> var p = 0; for (x in out) { x.copyInto(a, p); p += x.size } }
+                var speed = opt.speed
+                var parts: List<PartSpan> = spans
+                // "אורך מדויק": stretch to the asked length (between 0.7x and 1.45x of the natural one).
+                if (targetSeconds > 0f && wav.isNotEmpty()) {
+                    val ratio = (wav.size.toFloat() / rate / targetSeconds).coerceIn(0.7f, 1.45f)
+                    if (kotlin.math.abs(ratio - 1f) > 0.01f) {
+                        wav = TimeStretch.stretch(wav, ratio, rate)
+                        parts = spans.map { it.copy(start = (it.start / ratio).toInt(), end = (it.end / ratio).toInt().coerceAtMost(wav.size)) }
+                        speed *= ratio
+                    }
+                }
+                if (studio) wav = Master.studio(wav, rate)
                 val f = File(creationsDir, "karianoot_${System.currentTimeMillis()}.wav")
-                Wav.write(f, wav, engine.sampleRate)
-                val c = Creation(f, text, label(voice), wav.size.toFloat() / engine.sampleRate, System.currentTimeMillis(),
-                    ((System.nanoTime() - t0) / 1e9).toFloat(), spans, voice.id, opt.steps, opt.speed, opt.temperature, joined.pauseSeconds)
+                Wav.write(f, wav, rate)
+                val c = Creation(f, text, label(voice), wav.size.toFloat() / rate, System.currentTimeMillis(),
+                    ((System.nanoTime() - t0) / 1e9).toFloat(), parts, voice.id, opt.steps, speed, opt.temperature, pauseSec, studio)
                 save(listOf(c) + history())
                 recordSpeed(voice.modelId, c.genSeconds, c.seconds)
                 c
@@ -239,6 +301,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 // The retake gets the same sentence pauses as the recording and the loudness of the take it replaces.
                 val ps = engine.parts(span.text, opt, retake = true)
                 var fresh = Joiner.join(ps.map { it.samples }, ps.map { it.text }, rate, c.pause, engine.naturalPause, floor = engine.minPause).samples
+                if (c.studio) fresh = Master.studio(fresh, rate)
                 val target = Joiner.level(old.copyOfRange(span.start.coerceIn(0, old.size), span.end.coerceIn(0, old.size)), rate)
                 val now = Joiner.level(fresh, rate)
                 if (target > 0 && now > 0) {
@@ -287,7 +350,8 @@ class Speech(private val ctx: Context, private val models: Models, private val f
                 o.getDouble("seconds").toFloat(), o.getLong("at"), o.optDouble("gen", 0.0).toFloat(),
                 o.optJSONArray("parts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it) }
                     .map { PartSpan(it.getString("t"), it.getInt("s"), it.getInt("e")) } } ?: emptyList(),
-                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat(), o.optDouble("temp", 1.0).toFloat(), o.optDouble("pause", 0.0).toFloat())
+                o.optString("vid"), o.optInt("steps", 10), o.optDouble("speed", 1.0).toFloat(), o.optDouble("temp", 1.0).toFloat(), o.optDouble("pause", 0.0).toFloat(),
+                o.optBoolean("studio", false))
         }
     }.getOrDefault(emptyList())
 
@@ -300,22 +364,41 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         val a = JSONArray()
         for (c in list) a.put(JSONObject().put("file", c.file.name).put("text", c.text).put("voice", c.voice)
             .put("seconds", c.seconds.toDouble()).put("at", c.createdAt).put("gen", c.genSeconds.toDouble())
-            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble()).put("temp", c.temperature.toDouble()).put("pause", c.pause.toDouble())
+            .put("vid", c.voiceId).put("steps", c.steps).put("speed", c.speed.toDouble()).put("temp", c.temperature.toDouble()).put("pause", c.pause.toDouble()).put("studio", c.studio)
             .put("parts", JSONArray().also { pa -> c.parts.forEach { pa.put(JSONObject().put("t", it.text).put("s", it.start).put("e", it.end)) } }))
         index.writeText(a.toString())
     }
 
-    /** A copy of [c] with [music] (any audio file) underneath at [level]; saved as a new recording at the top of the list. */
-    suspend fun addMusic(c: Creation, music: android.net.Uri, level: Float): Creation = withContext(Dispatchers.Default) {
-        val (voice, rate) = Wav.read(c.file)
-        val m = AudioDecoder.decode(ctx, music, maxSeconds = 90)   // loops if the narration is longer
-        val mixed = com.karianoot.engine.Mixer.mix(voice, rate, m, 44100, level)
-        val f = File(creationsDir, c.file.nameWithoutExtension + "_music_${System.currentTimeMillis() % 100000}.wav")
-        Wav.write(f, mixed, rate)
-        val out = c.copy(file = f, voice = c.voice + " · עם מוזיקה", seconds = mixed.size.toFloat() / rate, createdAt = System.currentTimeMillis(),
-            genSeconds = 0f, parts = emptyList(), voiceId = "")   // a mixed copy is not re-made sentence by sentence
-        save(listOf(out) + history())
-        out
+    /**
+     * "עריכת סאונד": a copy of [c] with studio sound, an effect before / after, and music underneath (ducked under the
+     * words when [Polish.duck]); saved as a new recording at the top of the list.
+     */
+    suspend fun polish(c: Creation, p: Polish): Creation = withContext(Dispatchers.Default) {
+        var (voice, rate) = Wav.read(c.file)
+        if (p.studio && !c.studio) voice = Master.studio(voice, rate)
+        fun cat(vararg a: FloatArray): FloatArray { val o = FloatArray(a.sumOf { it.size }); var k = 0; for (x in a) { x.copyInto(o, k); k += x.size }; return o }
+        p.intro?.let { voice = cat(Sfx.make(it, rate), FloatArray((0.25f * rate).toInt()), voice) }
+        p.outro?.let { voice = cat(voice, FloatArray((0.3f * rate).toInt()), Sfx.make(it, rate)) }
+        var out = voice
+        if (p.music != null) {
+            val m = AudioDecoder.decode(ctx, p.music, maxSeconds = 90)   // loops if the narration is longer
+            out = com.karianoot.engine.Mixer.mix(voice, rate, m, 44100, p.level, duck = p.duck)
+        }
+        if (p.studio) out = Master.limit(out, rate)
+        val what = listOfNotNull("אולפן".takeIf { p.studio }, "מוזיקה".takeIf { p.music != null }, "אפקטים".takeIf { p.intro != null || p.outro != null })
+        val f = File(creationsDir, c.file.nameWithoutExtension + "_mix_${System.currentTimeMillis() % 100000}.wav")
+        Wav.write(f, out, rate)
+        val n = c.copy(file = f, voice = c.voice + " · " + what.joinToString(" + "), seconds = out.size.toFloat() / rate,
+            createdAt = System.currentTimeMillis(), genSeconds = 0f, parts = emptyList(), voiceId = "")   // not re-made sentence by sentence
+        save(listOf(n) + history())
+        n
+    }
+
+    /** A sound effect as a playable file (cached), to hear it before putting it in. */
+    fun effectSample(name: String): File {
+        val f = File(ctx.cacheDir, "sfx1_${Sfx.NAMES[name] ?: "x"}.wav")
+        if (!f.exists()) Wav.write(f, Sfx.make(name, 44100), 44100)
+        return f
     }
 
     /** Copies a creation into the phone's Music/Karianoot folder, where other apps can find it. */

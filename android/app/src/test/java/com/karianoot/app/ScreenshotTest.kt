@@ -61,6 +61,11 @@ class ScreenshotTest {
         shot("8_studio_favorites", Tab.Studio, "ערב טוב לכל האוהדים!")
     }
 
+    @Test fun studioMarkers() {
+        install(Catalog.g2p, Catalog.blue25)
+        shot("9_studio_markers", Tab.Studio, "{שריקה} ערב טוב לכל האוהדים! {הפסקה} המשחק הראשון: [קבוצה] נגד [קבוצה]. {קהל}")
+    }
+
     @Test fun models() {
         install(Catalog.g2p)
         shot("3_models", Tab.Models)

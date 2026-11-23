@@ -63,4 +63,15 @@ class LexiconTest {
         assertEquals("veha", Lexicon.prefix("וה"))
         assertEquals("ʃele", Lexicon.prefix("של"))
     }
+
+    @Test fun downloadedNamesJoinAndWin() {
+        try {
+            val n = Lexicon.setExtra(mapOf("קוואראצחליה" to "kvaʁatsˈχelja", "תיקו" to "tˈiko", "bad" to "x", "פסול" to "ABC"))
+            assertEquals(2, n)
+            assertEquals("vekvaʁatsˈχelja", Lexicon.apply("וקוואראצחליה"))
+            assertEquals("tˈiko", Lexicon.apply("תיקו"))
+            assertEquals("פסול", Lexicon.apply("פסול"))
+        } finally { Lexicon.setExtra(emptyMap()) }
+        assertEquals("tˈeku", Lexicon.apply("תיקו"))
+    }
 }

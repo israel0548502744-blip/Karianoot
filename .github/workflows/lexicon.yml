@@ -1,0 +1,36 @@
+name: Publish name list
+
+# tools/lexicon/lexicon.json -> prerelease "lexicon" (the app fetches it once a day: LexiconUpdates.kt), so new player
+# names reach every phone without a new APK. A prerelease, so it never becomes the "latest" release the update check reads.
+on:
+  workflow_dispatch:
+  push:
+    paths: ["tools/lexicon/**", ".github/workflows/lexicon.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the entries (same rules as Lexicon.setExtra)
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+          o = json.load(open("tools/lexicon/lexicon.json", encoding="utf-8"))
+          assert isinstance(o["version"], int) and o["version"] > 0
+          bad = [k for k, v in o["words"].items()
+                 if not re.fullmatch(r"[א-ת' ]{2,40}", k) or not re.fullmatch(r"[abdefhijklmnoprstuvzɡʁʃʔχˈʒw ]+", v) or "ˈ" not in v]
+          print("version", o["version"], "words", len(o["words"]), "bad", bad)
+          sys.exit(1 if bad else 0)
+          PY
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view lexicon -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 || \
+            gh release create lexicon -R "$GITHUB_REPOSITORY" --prerelease --title "Name list" --notes "Football names the app downloads (LexiconUpdates). Not the app."
+          gh release upload lexicon tools/lexicon/lexicon.json --clobber -R "$GITHUB_REPOSITORY"

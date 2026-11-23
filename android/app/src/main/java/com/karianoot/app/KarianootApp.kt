@@ -34,6 +34,7 @@ class KarianootApp : Application() {
     lateinit var voiceOrder: VoiceOrder
     lateinit var updates: Updates
     lateinit var crashes: CrashLog
+    lateinit var lexicon: LexiconUpdates
     val backup by lazy { Backup(this) }
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _job = MutableStateFlow(JobState())
@@ -66,7 +67,9 @@ class KarianootApp : Application() {
         updates = Updates(this)
         speech = Speech(this, models) { pronounce.list.value }
         voices = Voices(this, models)
+        lexicon = LexiconUpdates(this).also { it.loadCached() }
         Notify.createChannels(this)
+        Shortcuts.install(this)
     }
 
     private val settings by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
@@ -77,13 +80,36 @@ class KarianootApp : Application() {
     /** A narration just finished and should start playing once its card is on screen. */
     val autoPlayPending = MutableStateFlow(false)
 
-    fun narrate(text: String, voice: VoiceInfo, opt: BlueTts.Options) {
+    /** Setting "הימור אחראי": a closing line read at the end of every narration (off by default). */
+    var responsible: Boolean
+        get() = settings.getBoolean("responsible", false)
+        set(v) { settings.edit().putBoolean("responsible", v).apply() }
+    var responsibleLine: String
+        get() = settings.getString("responsible_line", null)?.takeIf { it.isNotBlank() } ?: RESPONSIBLE_DEFAULT
+        set(v) { settings.edit().putString("responsible_line", v.trim()).apply() }
+    /** Setting "סאונד אולפן" on every narration (off by default: the user chose the voices by ear as they are). */
+    var studioAlways: Boolean
+        get() = settings.getBoolean("studio", false)
+        set(v) { settings.edit().putBoolean("studio", v).apply() }
+
+    /** Text sent to the app from outside (share, text selection menu, "הדבקה וקריינות"); [narrate] = start right away. */
+    data class Incoming(val text: String, val narrate: Boolean)
+    val incoming = MutableStateFlow<Incoming?>(null)
+
+    /** [text] with the closing line of "הימור אחראי" when it is on (and not already there). */
+    fun withClosing(text: String): String {
+        if (!responsible) return text
+        val line = responsibleLine
+        return if (text.trimEnd().endsWith(line)) text else text.trimEnd() + "\n" + line
+    }
+
+    fun narrate(text: String, voice: VoiceInfo, opt: BlueTts.Options, targetSeconds: Float = 0f) {
         if (_job.value.busy) return
         _job.value = JobState(busy = true, stage = "מתחיל…", startedAt = System.currentTimeMillis())
         ContextCompat.startForegroundService(this, Intent(this, NarrationService::class.java))
         scope.launch {
             runCatching {
-                speech.speak(text, voice, opt) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
+                speech.speak(withClosing(text), voice, opt, targetSeconds, studioAlways) { s, p -> _job.value = _job.value.copy(stage = s, progress = p) }
             }.onSuccess { c -> autoPlayPending.value = autoPlay; _job.value = JobState(result = c) }
                 .onFailure { e -> _job.value = JobState(error = if (speech.wasCancelled()) "הקריינות בוטלה" else e.message ?: e.toString()) }
         }
@@ -136,13 +162,17 @@ class KarianootApp : Application() {
         }
     }
 
-    /** Background music under [c]; [done] gets the new recording (null on failure). */
-    fun addMusic(c: Creation, music: android.net.Uri, level: Float, done: (Creation?) -> Unit) {
+    /** "עריכת סאונד" of [c]; [done] gets the new recording (null on failure). */
+    fun polish(c: Creation, p: Polish, done: (Creation?) -> Unit) {
         scope.launch {
-            val r = runCatching { speech.addMusic(c, music, level) }.getOrNull()
+            val r = runCatching { speech.polish(c, p) }.getOrNull()
             kotlinx.coroutines.withContext(Dispatchers.Main) { done(r) }
         }
     }
 
     fun clearResult() { if (!_job.value.busy) _job.value = JobState() }
+
+    companion object {
+        const val RESPONSIBLE_DEFAULT = "ההימורים מותרים מגיל שמונה עשרה בלבד. הַמְּרוּ באחריות."
+    }
 }

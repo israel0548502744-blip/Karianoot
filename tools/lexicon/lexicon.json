@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "note": "Names the app learns without an update (Lexicon.setExtra). Key: Hebrew spelling; value: stressed IPA in the G2P's symbols (abdefhijklmnoprstuvzɡʁʃʔχˈʒw), stress mark before the stressed vowel. Bump version on every change.",
+  "words": {}
+}
