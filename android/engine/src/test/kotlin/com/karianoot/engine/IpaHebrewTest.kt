@@ -11,7 +11,7 @@ class IpaHebrewTest {
     @Test fun readsBackAsHebrew() {
         for ((ipa, want) in listOf(
             "ʔˈaʁsenal" to "[אַרְ]·סֶ·נַל", "tˈeku" to "[טֶ]·קוּ", "ʃalˈom" to "שַׁ·[לוֹם]", "dʒˈenoa" to "[ג׳ֶ]·נוֹ·אַ",
-            "ʔˈitalja" to "[אִי]·טַלְ·יַ", "lˈajptsiɡ" to "[לַיְ]·פְּצִיג", "mbapˈe" to "מְבַּ·[פֶּ]",
+            "ʔˈitalja" to "[אִי]·טַלְ·יַ", "tˈov" to "[טוֹב]", "ʔˈeʁev" to "[אֶ]·רֶב", "vˈeʃlo" to "[וֶשְׁ]·לוֹ", "lˈajptsiɡ" to "[לַיְ]·פְּצִיג", "mbapˈe" to "מְבַּ·[פֶּ]",
         )) assertEquals(ipa, nfc(want), show(ipa))
     }
 

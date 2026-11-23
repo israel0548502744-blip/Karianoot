@@ -3,7 +3,7 @@ package com.karianoot.engine
 /**
  * Stressed IPA back into Hebrew letters with niqqud, so the user can SEE how a word will be said: "ʔˈaʁsenal" ->
  * אַרְ·סֶ·נַל with the first syllable marked as stressed. Foreign sounds keep the usual Israeli spelling (ג׳, צ׳, ז׳),
- * k is ק, t is ט, v is ו, as in transliterated names. Also makes the other stress choices of a word ([stressVariants]),
+ * k is ק, t is ט (as in transliterated names), v is ב inside a word and ו at its start. Also makes the other stress choices of a word ([stressVariants]),
  * for "which one is right?" by ear.
  */
 object IpaHebrew {
@@ -23,7 +23,7 @@ object IpaHebrew {
     private val FINAL = mapOf("מ" to "ם", "נ" to "ן", "פ" to "ף", "צ" to "ץ", "כ" to "ך")
 
     private sealed interface Ph
-    private data class C(val letters: String) : Ph
+    private data class C(val letters: String, val v: Boolean = false) : Ph
     private data class V(val v: Char, val stressed: Boolean) : Ph
 
     private fun phones(ipa: String): List<Ph> {
@@ -38,7 +38,7 @@ object IpaHebrew {
                 else -> {
                     val two = if (i + 1 < s.length) s.substring(i, i + 2) else ""
                     val hit = CONS[two]?.let { two to it } ?: CONS[ch.toString()]?.let { ch.toString() to it }
-                    if (hit != null) { out.add(C(hit.second)); i += hit.first.length } else i++
+                    if (hit != null) { out.add(C(hit.second, hit.first == "v")); i += hit.first.length } else i++
                 }
             }
         }
@@ -78,6 +78,8 @@ object IpaHebrew {
                     is C -> {
                         val next = ph.getOrNull(global + 1)
                         var letters = p.letters
+                        // v is ב (בֿ) inside a word, as in טוב, ערב; only at the start of a word is it ו.
+                        if (letters == "ו" && p.v && global > 0) letters = "ב"
                         if (global == lastC) letters = FINAL[letters] ?: letters
                         sb.append(letters)
                         when {
