@@ -62,6 +62,11 @@ jobs:
           for f in ocr/*_prep.png; do b=${f%.png}
             tesseract $f $b.heb --tessdata-dir tessdata -l heb --psm 6 -c tessedit_create_tsv=1 2>&1 | tail -2
             tesseract $f $b.dig --tessdata-dir tessdata -l eng --psm 11 -c tessedit_char_whitelist=0123456789.,X -c tessedit_create_tsv=1 2>&1 | tail -2
+            ls -la $b.*; echo "--- digits pass words (conf text):" >> report.txt
+            awk -F'\t' 'NR>1 && $1==5 {print $11, $12}' $b.dig.tsv | head -30 >> report.txt || true
+            # The same digits pass on the original (not inverted / not enlarged) picture, to compare.
+            o=${b%_prep}; tesseract $o.png $o.dig2 --tessdata-dir tessdata -l eng --psm 11 -c tessedit_char_whitelist=0123456789.,X -c tessedit_create_tsv=1 > /dev/null 2>&1 || true
+            echo "--- digits pass on the original:" >> report.txt; awk -F'\t' 'NR>1 && $1==5 {print $11, $12}' $o.dig2.tsv | head -30 >> report.txt || true
             python3 tools/release/slip_merge.py $b.heb.tsv $b.dig.tsv > $b.txt
             echo "=== $b (merged)" >> report.txt; cat $b.txt >> report.txt
           done
