@@ -60,8 +60,54 @@ object SlipText {
             else p.odds?.let { sb.append(" היחס ${num(it)}.") }
         }
         val all = picks.mapNotNull { it.odds }
-        if (picks.size > 1 && all.size == picks.size) sb.append("\nביחד זה טופס ביחס כולל של ${num(all.fold(1f) { x, y -> x * y })}.")
+        if (picks.size > 1 && all.size == picks.size) sb.append("\nביחד זה טופס ביחס כולל של ${ScriptWriter.total(all)}.")
         sb.append("\nבהצלחה לכולם, ותעקבו כדי לא לפספס את הטופס הבא!")
         return sb.toString()
+    }
+
+    /** A word Tesseract found: text, box (pixels), confidence, and which line it is on (Hebrew pass). */
+    data class OcrWord(val text: String, val x: Int, val y: Int, val w: Int, val h: Int, val conf: Float, val line: Int)
+
+    private val HOCR_LINE = Regex("<span class=['\"]ocr_line['\"][^>]*>(.*?)</span>\\s*</span>|<span class=['\"]ocr_line['\"][^>]*>", RegexOption.DOT_MATCHES_ALL)
+    private val HOCR_WORD = Regex("<span class=['\"]ocrx_word['\"][^>]*title=['\"]bbox (\\d+) (\\d+) (\\d+) (\\d+); x_wconf (\\d+)['\"][^>]*>(.*?)</span>", RegexOption.DOT_MATCHES_ALL)
+
+    /** Words of a Tesseract hOCR page, numbered by line. */
+    fun hocrWords(hocr: String): List<OcrWord> {
+        val out = ArrayList<OcrWord>()
+        // Split on line starts; every word after a line start belongs to that line.
+        val parts = hocr.split(Regex("(?=<span class=['\"]ocr_line['\"])"))
+        parts.forEachIndexed { li, part ->
+            for (m in HOCR_WORD.findAll(part)) {
+                val (x0, y0, x1, y1, c) = m.destructured
+                val text = m.groupValues[6].replace(Regex("<[^>]+>"), "").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").trim()
+                if (text.isNotEmpty()) out.add(OcrWord(text, x0.toInt(), y0.toInt(), x1.toInt() - x0.toInt(), y1.toInt() - y0.toInt(), c.toFloat(), li))
+            }
+        }
+        return out
+    }
+
+    private val FINAL_INSIDE = Regex("[ךםןףץ](?=[\\u05D0-\\u05EA])")
+
+    /** A Hebrew-pass word that is really a misread number or noise. */
+    fun garbage(t: String) = FINAL_INSIDE.containsMatchIn(t) ||
+        (Regex("[A-Za-z0-9]").containsMatchIn(t) && !Regex("[\\u05D0-\\u05EA'׳\"״\\-]+").matches(t))
+
+    /**
+     * The Hebrew pass gives the words (its digits are garbage: Hebrew models read digits as letters); a digits-only pass
+     * gives the numbers. Each number joins the Hebrew line it sits on; numbers on no line become their own lines.
+     */
+    fun merge(heb: List<OcrWord>, digits: List<OcrWord>): String {
+        val rows = ArrayList<Pair<Int, String>>()
+        val used = HashSet<Int>()
+        for ((_, ws) in heb.groupBy { it.line }) {
+            val top = ws.minOf { it.y }; val bottom = ws.maxOf { it.y + it.h }; val h = bottom - top
+            val words = ws.sortedByDescending { it.x }.map { it.text }.filterNot(::garbage)
+            val nums = digits.withIndex().filter { (_, d) -> d.conf > 50 && d.y + d.h / 2f in (top - 0.3f * h)..(bottom + 0.3f * h) }
+            nums.forEach { used.add(it.index) }
+            val line = (words + nums.sortedByDescending { it.value.x }.map { it.value.text }).joinToString(" ")
+            if (line.isNotBlank()) rows.add(top to line)
+        }
+        digits.forEachIndexed { i, d -> if (i !in used && d.conf > 50) rows.add(d.y to d.text) }
+        return rows.sortedBy { it.first }.joinToString("\n") { it.second }
     }
 }

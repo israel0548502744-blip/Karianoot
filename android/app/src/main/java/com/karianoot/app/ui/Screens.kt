@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Queue
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Restore
@@ -199,6 +200,8 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
     var queueOpen by remember { mutableStateOf(false) }
     val queued by app.queue.collectAsState()
     var readingOpen by remember { mutableStateOf(false) }
+    var slipOpen by remember { mutableStateOf(false) }
+    var writerOpen by remember { mutableStateOf(false) }
     val custom by app.voices.custom.collectAsState()
     val cloning by app.cloning.collectAsState()
     var newVoice by remember { mutableStateOf(false) }
@@ -327,12 +330,21 @@ fun StudioScreen(app: KarianootApp, sharedText: String?, history: MutableList<Cr
                 SoftButton("תבניות ופתיחים", Modifier.weight(1f), icon = Icons.Rounded.AutoAwesome) { templatesOpen = true }
                 SoftButton("אפקט / הפסקה", Modifier.weight(1f), icon = Icons.Rounded.MusicNote) { effectsOpen = true }
             }
-            SoftButton("איך זה ייקרא? (בדיקת הגייה)", Modifier.fillMaxWidth(), icon = Icons.Rounded.RecordVoiceOver,
-                enabled = text.isNotBlank() && g2pReady && !busy) { readingOpen = true }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SoftButton("איך זה ייקרא?", Modifier.weight(1f), icon = Icons.Rounded.RecordVoiceOver,
+                    enabled = text.isNotBlank() && g2pReady && !busy) { readingOpen = true }
+                SoftButton("מצילום טופס", Modifier.weight(1f), icon = Icons.Rounded.PhotoCamera) {
+                    if (states[Catalog.ocr.id] == ModelState.Ready) slipOpen = true
+                    else { Toast.makeText(ctx, "מורידים פעם אחת את \"קורא הטפסים\" (5MB) במסך המודלים", Toast.LENGTH_LONG).show(); openModels() }
+                }
+            }
+            SoftButton("כותב תסריטים: משחקים ויחסים ← תסריט", Modifier.fillMaxWidth(), icon = Icons.Rounded.AutoAwesome, color = C.Gold) { writerOpen = true }
             if (app.responsible) Text("בסוף תיקרא השורה: \"${app.responsibleLine}\" (אפשר לשנות בהגדרות)", color = C.Faint, fontSize = 12.sp, lineHeight = 17.sp)
         }
         if (templatesOpen) TemplatesDialog(app, current = text, onPick = { t -> setText(if (text.isBlank()) t else text.trimEnd() + (if (t.startsWith("א:")) "\n" else " ") + t) }) { templatesOpen = false }
         if (readingOpen) ReadingDialog(app, text, voice) { readingOpen = false }
+        if (writerOpen) WriterDialog(onScript = { t -> setText(if (text.isBlank()) t else text.trimEnd() + "\n" + t) }) { writerOpen = false }
+        if (slipOpen) SlipDialog(app, onScript = { t -> setText(if (text.isBlank()) t else text.trimEnd() + "\n" + t) }) { slipOpen = false }
         if (effectsOpen) EffectsDialog(app, onInsert = { m -> field = insertAtCursor(field, m) }) { effectsOpen = false }
         // Text from outside: a share, "קריינות" in the text-selection menu, or "הדבקה וקריינות" (which also starts it).
         val incoming by app.incoming.collectAsState()

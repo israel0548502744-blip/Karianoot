@@ -462,7 +462,7 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         Wav.write(f, out, rate)
         val n = c.copy(file = f, voice = c.voice + " · " + what.joinToString(" + "), seconds = out.size.toFloat() / rate,
             // Not re-made sentence by sentence (voiceId empty), but the sentence times stay for captions.
-            createdAt = System.currentTimeMillis(), genSeconds = 0f, parts = c.parts.map { it.copy(start = it.start + shift, end = it.end + shift) }, voiceId = "")
+            createdAt = System.currentTimeMillis(), genSeconds = 0f, parts = c.parts.map { it.copy(start = it.start + shift, end = it.end + shift) }, voiceId = "", studio = c.studio || p.studio)
         save(listOf(n) + history())
         n
     }

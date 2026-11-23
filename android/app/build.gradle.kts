@@ -92,6 +92,8 @@ dependencies {
     // comes back when a model is actually compiled for the NPU.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // "צילום טופס": Tesseract OCR for Android (Apache-2.0); the Hebrew/English models download like the voices.
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.7.0")
 
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")

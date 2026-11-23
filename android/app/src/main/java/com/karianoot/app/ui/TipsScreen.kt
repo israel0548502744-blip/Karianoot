@@ -83,6 +83,11 @@ fun TipsScreen(app: KarianootApp, studioText: () -> String, toStudio: (String) -
             toStudio(Tips.summary(week))
             Toast.makeText(ctx, "התסריט מחכה בסטודיו. אפשר לשנות אותו לפני הקריינות.", Toast.LENGTH_LONG).show()
         }
+        val open = tips.filter { it.status == Tips.Status.PENDING }
+        if (open.isNotEmpty()) SoftButton("תסריט מ-${open.size} הטיפים הפתוחים", Modifier.fillMaxWidth(), icon = Icons.Rounded.AutoAwesome, color = C.Gold) {
+            toStudio(com.karianoot.engine.ScriptWriter.write(open.reversed().map { com.karianoot.engine.ScriptWriter.Match(it.match, it.pick, it.odds) },
+                seed = (System.currentTimeMillis() % 1000).toInt()))
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SoftButton("הוספת טיפ", Modifier.weight(1f), icon = Icons.Rounded.Add, color = C.Gold) { adding = true }
             SoftButton("מהתסריט בסטודיו", Modifier.weight(1f), icon = Icons.Rounded.Description) {

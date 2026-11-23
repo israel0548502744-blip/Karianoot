@@ -7,7 +7,7 @@ package com.karianoot.app
 data class ModelFile(val path: String, val size: Long, val repo: String? = null, val revision: String? = null,
                      val url: String? = null, val sha256: String? = null)
 
-enum class ModelKind { G2P, BLUE, CLONE, QWEN, MAGPIE, SOON }
+enum class ModelKind { G2P, BLUE, CLONE, QWEN, MAGPIE, OCR, SOON }
 
 data class ModelInfo(
     val id: String,
@@ -156,7 +156,23 @@ object Catalog {
         ModelInfo("noa", "נועה (Piper)", "קול נשי מהיר מאוד.", ModelKind.SOON, license = "CC BY 4.0", credit = "thewh1teagle"),
     )
 
-    val downloadable = listOf(g2p, magpie, qwen, blue25, blueV3, clone)
+    /** "צילום טופס": Tesseract's fast Hebrew and English models (tessdata_fast 4.1.0, Apache-2.0), in models-v1 (ocr-probe.yml). */
+    val ocr = ModelInfo(
+        id = "ocr", kind = ModelKind.OCR,
+        title = "קורא הטפסים",
+        subtitle = "קורא צילום מסך של טופס ומכין ממנו תסריט. בלי אינטרנט.",
+        repo = "tesseract-ocr/tessdata_fast", revision = "4.1.0",
+        license = "Apache-2.0", credit = "Tesseract OCR — Google and contributors",
+        home = "github.com/tesseract-ocr/tessdata_fast",
+        files = listOf(
+            ModelFile("tessdata/heb.traineddata", 961_404, url = "$MODELS_V1/ocr-tessdata-heb.traineddata",
+                sha256 = "11f9e43ab227f786352a50f75c94c2e9906f1baba86d93276da19da7ce0904db"),
+            ModelFile("tessdata/eng.traineddata", 4_113_088, url = "$MODELS_V1/ocr-tessdata-eng.traineddata",
+                sha256 = "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"),
+        ),
+    )
+
+    val downloadable = listOf(g2p, magpie, qwen, blue25, blueV3, clone, ocr)
     val all = downloadable + soon
 
     private fun q(id: String, name: String, note: String, female: Boolean, personal: Boolean = false) =
