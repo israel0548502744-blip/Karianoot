@@ -170,6 +170,30 @@ class KarianootApp : Application() {
         }
     }
 
+    /** The video being made: (recording, progress 0..1), or null. */
+    val video = MutableStateFlow<Pair<java.io.File, Float>?>(null)
+    @Volatile private var videoCancel = false
+
+    /** A vertical video of [c] with captions; [done] gets the MP4 (null on failure or cancel). */
+    fun makeVideo(c: Creation, style: VideoMaker.Style, done: (java.io.File?, String?) -> Unit) {
+        if (video.value != null) return
+        videoCancel = false
+        video.value = c.file to 0f
+        scope.launch {
+            val out = java.io.File(speech.videosDir, c.file.nameWithoutExtension + "_${System.currentTimeMillis() % 100000}.mp4")
+            val r = runCatching {
+                VideoMaker(this@KarianootApp).make(c.file, speech.captions(c), style, out, { p -> video.value = c.file to p }, { videoCancel })
+                // Keep the newest 10 videos.
+                speech.videosDir.listFiles { f -> f.extension == "mp4" }?.sortedByDescending { it.lastModified() }?.drop(10)?.forEach { it.delete() }
+                out
+            }
+            video.value = null
+            kotlinx.coroutines.withContext(Dispatchers.Main) { done(r.getOrNull(), r.exceptionOrNull()?.let { if (videoCancel) null else it.message ?: it.toString() }) }
+        }
+    }
+
+    fun cancelVideo() { videoCancel = true }
+
     fun clearResult() { if (!_job.value.busy) _job.value = JobState() }
 
     companion object {

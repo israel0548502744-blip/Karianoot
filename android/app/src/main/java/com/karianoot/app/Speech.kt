@@ -377,7 +377,8 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         var (voice, rate) = Wav.read(c.file)
         if (p.studio && !c.studio) voice = Master.studio(voice, rate)
         fun cat(vararg a: FloatArray): FloatArray { val o = FloatArray(a.sumOf { it.size }); var k = 0; for (x in a) { x.copyInto(o, k); k += x.size }; return o }
-        p.intro?.let { voice = cat(Sfx.make(it, rate), FloatArray((0.25f * rate).toInt()), voice) }
+        var shift = 0
+        p.intro?.let { val e = Sfx.make(it, rate); shift = e.size + (0.25f * rate).toInt(); voice = cat(e, FloatArray((0.25f * rate).toInt()), voice) }
         p.outro?.let { voice = cat(voice, FloatArray((0.3f * rate).toInt()), Sfx.make(it, rate)) }
         var out = voice
         if (p.music != null) {
@@ -389,10 +390,38 @@ class Speech(private val ctx: Context, private val models: Models, private val f
         val f = File(creationsDir, c.file.nameWithoutExtension + "_mix_${System.currentTimeMillis() % 100000}.wav")
         Wav.write(f, out, rate)
         val n = c.copy(file = f, voice = c.voice + " · " + what.joinToString(" + "), seconds = out.size.toFloat() / rate,
-            createdAt = System.currentTimeMillis(), genSeconds = 0f, parts = emptyList(), voiceId = "")   // not re-made sentence by sentence
+            // Not re-made sentence by sentence (voiceId empty), but the sentence times stay for captions.
+            createdAt = System.currentTimeMillis(), genSeconds = 0f, parts = c.parts.map { it.copy(start = it.start + shift, end = it.end + shift) }, voiceId = "")
         save(listOf(n) + history())
         n
     }
+
+    /** Word-by-word captions of [c] (from its sentence times; the whole text over the whole file when there are none). */
+    fun captions(c: Creation): List<com.karianoot.engine.Captions.Card> {
+        val (audio, rate) = Wav.read(c.file)
+        val spans = c.parts.map { com.karianoot.engine.Captions.Span(it.text, it.start, it.end) }
+            .ifEmpty { listOf(com.karianoot.engine.Captions.Span(c.text, 0, audio.size)) }
+        return com.karianoot.engine.Captions.cards(com.karianoot.engine.Captions.words(spans, audio, rate))
+    }
+
+    val videosDir get() = File(creationsDir, "videos").apply { mkdirs() }
+
+    /** The .srt captions of [c] as a file to share. */
+    fun srtFile(c: Creation): File = File(videosDir, c.file.nameWithoutExtension + ".srt").apply {
+        writeText(com.karianoot.engine.Captions.srt(captions(c)))
+    }
+
+    /** Saves a video into the phone's Movies/Karianoot folder (the gallery). */
+    fun exportVideo(f: File): Boolean = runCatching {
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, f.name)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Karianoot")
+        }
+        val uri = ctx.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+        ctx.contentResolver.openOutputStream(uri)?.use { out -> f.inputStream().use { it.copyTo(out) } }
+        true
+    }.getOrDefault(false)
 
     /** A sound effect as a playable file (cached), to hear it before putting it in. */
     fun effectSample(name: String): File {

@@ -38,6 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Restore
@@ -691,6 +692,8 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
     var musicOpen by remember(c) { mutableStateOf(false) }
     var shareOpen by remember(c) { mutableStateOf(false) }
     if (shareOpen) ShareDialog(c) { shareOpen = false }
+    var videoOpen by remember(c) { mutableStateOf(false) }
+    if (videoOpen) VideoDialog(app, c) { videoOpen = false }
     if (musicOpen) PolishDialog(app, c, onMake = { p ->
         musicOpen = false
         Toast.makeText(ctx, "מעבד את הסאונד…", Toast.LENGTH_SHORT).show()
@@ -747,6 +750,7 @@ fun CreationCard(c: Creation, app: KarianootApp, history: MutableList<Creation>,
             CircleIcon(Icons.Rounded.Flag, "דיווח על תוכן", tint = C.Sub) { reportContent(ctx, c.text, c.voice) }
             CircleIcon(Icons.Rounded.Delete, "מחק", tint = C.Red, onClick = onDelete)
         }
+        GoldButton("סרטון עם כתוביות לטיקטוק", Modifier.fillMaxWidth(), icon = Icons.Rounded.Movie) { if (playing) { player.pause(); playing = false }; videoOpen = true }
         SoftButton("עריכת סאונד: אולפן, מוזיקה, אפקטים", Modifier.fillMaxWidth(), icon = Icons.Rounded.MusicNote) { musicOpen = true }
         if (c.parts.size > 1 && c.voiceId.isNotEmpty())
             SoftButton(if (showParts) "סגירת תיקון משפטים" else "משפט יצא לא טוב? תיקון משפט", Modifier.fillMaxWidth(), icon = Icons.Rounded.Tune,
