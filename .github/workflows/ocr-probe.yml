@@ -1,0 +1,77 @@
+name: Slip reader probe
+
+# "צילום טופס": Tesseract (Apache-2.0) with tessdata_fast Hebrew + English (Apache-2.0, tag 4.1.0) on rendered test slips
+# (light and dark, like betting-app screenshots), then SlipText on what it read. Also puts the two model files into
+# models-v1 (only when missing) and prints their size and sha256 for Catalog.kt.
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/ocr-probe.yml", "android/engine/src/main/kotlin/com/karianoot/engine/SlipText.kt"]
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Model files
+        run: |
+          mkdir -p tessdata
+          for l in heb eng; do curl -sSfL -o tessdata/$l.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/$l.traineddata; done
+          curl -sSfL -o tessdata/LICENSE https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/LICENSE
+          ls -l tessdata | tee report.txt; sha256sum tessdata/* | tee -a report.txt
+      - name: Into models-v1 (only if missing)
+        run: |
+          have=$(gh release view models-v1 -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+          for l in heb eng; do n=ocr-tessdata-$l.traineddata; echo "$have" | grep -qx "$n" || { cp tessdata/$l.traineddata $n; gh release upload models-v1 $n -R "$GITHUB_REPOSITORY"; echo "uploaded $n"; }; done
+          echo "$have" | grep -qx "ocr-LICENSE-tessdata.txt" || { cp tessdata/LICENSE ocr-LICENSE-tessdata.txt; gh release upload models-v1 ocr-LICENSE-tessdata.txt -R "$GITHUB_REPOSITORY"; }
+      - name: Render test slips and read them
+        run: |
+          sudo apt-get install -y -q tesseract-ocr fonts-noto-core > /dev/null
+          tesseract --version | head -1 | tee -a report.txt
+          pip install -q pillow
+          mkdir -p ocr && python3 - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          import glob
+          font = [f for f in glob.glob("/usr/share/fonts/truetype/noto/NotoSansHebrew-*.ttf") if "Regular" in f or "Bold" in f]
+          bold = ImageFont.truetype(sorted(font)[0], 46); small = ImageFont.truetype(sorted(font)[-1], 38)
+          rows = [("ארסנל - צ'לסי", "1", "2.10"), ("ריאל מדריד - ברצלונה", "שתי הקבוצות יבקיעו", "1.75"),
+                  ("מכבי חיפה - הפועל באר שבע", "X", "3.40"), ("באיירן - דורטמונד", "מעל 2.5 שערים", "1.60")]
+          for name, bg, fg, acc in [("light", "#ffffff", "#111111", "#0a7d32"), ("dark", "#14161a", "#f2f2f2", "#f5c542")]:
+              im = Image.new("RGB", (1080, 1500), bg); d = ImageDraw.Draw(im)
+              d.text((1040, 60), "הטופס שלי", font=bold, fill=fg, anchor="ra")
+              y = 180
+              for m, pick, odds in rows:
+                  d.rounded_rectangle((30, y - 20, 1050, y + 200), 24, outline=acc, width=3)
+                  d.text((1010, y), m, font=bold, fill=fg, anchor="ra")
+                  d.text((1010, y + 90), pick, font=small, fill=fg, anchor="ra")
+                  d.text((70, y + 90), odds, font=bold, fill=acc, anchor="la")
+                  y += 260
+              d.text((1010, y + 20), "יחס כולל 19.99", font=bold, fill=fg, anchor="ra")
+              im.save(f"ocr/{name}.png")
+              # The app's own preparation: grey, twice as large, dark backgrounds inverted.
+              g = im.convert("L").resize((im.width * 2, im.height * 2))
+              if name == "dark": g = Image.eval(g, lambda v: 255 - v)
+              g.save(f"ocr/{name}_prep.png")
+          PY
+          for f in ocr/*.png; do b=${f%.png}; tesseract $f $b --tessdata-dir tessdata -l heb+eng --psm 6 > /dev/null 2>&1; echo "=== $b" >> report.txt; cat $b.txt >> report.txt; done
+          cat report.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: SlipText on what Tesseract read
+        run: KARIANOOT_OCR=$PWD/ocr gradle -p android :engine:test --tests 'com.karianoot.engine.SlipOcrTest' --no-daemon -i 2>&1 | grep CHECK | tee -a report.txt
+      - name: Publish
+        if: always()
+        run: |
+          gh release delete ocr-probe -y -R "$GITHUB_REPOSITORY" --cleanup-tag 2>/dev/null || true
+          gh release create ocr-probe report.txt ocr/*.png -R "$GITHUB_REPOSITORY" --prerelease --title "Slip reader probe" --notes "Tesseract on test slips. Not the app." || true
