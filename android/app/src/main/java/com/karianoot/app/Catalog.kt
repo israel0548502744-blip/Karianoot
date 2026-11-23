@@ -7,7 +7,7 @@ package com.karianoot.app
 data class ModelFile(val path: String, val size: Long, val repo: String? = null, val revision: String? = null,
                      val url: String? = null, val sha256: String? = null)
 
-enum class ModelKind { G2P, BLUE, CLONE, QWEN, MAGPIE, OCR, SOON }
+enum class ModelKind { G2P, BLUE, CLONE, QWEN, MAGPIE, OCR, PROOF, SOON }
 
 data class ModelInfo(
     val id: String,
@@ -174,19 +174,20 @@ object Catalog {
 
     /**
      * "בדיקת הקריינות": ivrit-ai's Hebrew whisper (Apache-2.0) on whisper.cpp, quantized, in models-v1 (whisper-jni.yml).
-     * Not offered until the phone file is hosted and checked ([downloadable]); the check button hides itself until then.
+     * q5_0, 574 MB; through the bridge: 1-similarity 1.1% on Magpie takes, no false misses, work/audio 3.5 on 4 CI cores.
      */
     const val PROOF_FILE = "whisper-he.bin"
     val proof = ModelInfo(
-        id = "proof", kind = ModelKind.SOON,
+        id = "proof", kind = ModelKind.PROOF,
         title = "בודק הקריינות",
         subtitle = "מקשיב לקריינות ומסמן מילים שכדאי לשמוע שוב. בלי אינטרנט.",
         repo = "ivrit-ai/whisper-large-v3-turbo-ggml", revision = "",
         license = "Apache-2.0", credit = "ivrit.ai · whisper.cpp — Georgi Gerganov (MIT)",
-        files = emptyList(),
+        files = listOf(ModelFile(PROOF_FILE, 574_041_195, url = "$MODELS_V1/proof-whisper-he.bin",
+            sha256 = "c8108b5546e255e385b1edbd45d319f4b4bf91d67d21cc524b6005ed7b749b54")),
     )
 
-    val downloadable = listOf(g2p, magpie, qwen, blue25, blueV3, clone, ocr)
+    val downloadable = listOf(g2p, magpie, qwen, blue25, blueV3, clone, ocr, proof)
     val all = downloadable + soon
 
     private fun q(id: String, name: String, note: String, female: Boolean, personal: Boolean = false) =
